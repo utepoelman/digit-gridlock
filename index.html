@@ -1,0 +1,3143 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<!-- © Ute Poelman. All rights reserved. Terms of use: https://nugget-maths.co.nz/#terms -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Digit Gridlock — Classroom Maths Expression Game</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- MQTT over WebSockets Client Library (for optional online multi-device rooms) -->
+  <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
+  <!-- Canvas Confetti CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <!-- Font Awesome Icons CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Inter & JetBrains Mono Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          },
+          animation: {
+            'shake': 'shake 0.4s cubic-bezier(.36,.07,.19,.97) both',
+            'pop': 'pop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) both'
+          },
+          keyframes: {
+            shake: {
+              '10%, 90%': { transform: 'translate3d(-1px, 0, 0)' },
+              '20%, 80%': { transform: 'translate3d(2px, 0, 0)' },
+              '30%, 50%, 70%': { transform: 'translate3d(-4px, 0, 0)' },
+              '40%, 60%': { transform: 'translate3d(4px, 0, 0)' }
+            },
+            pop: {
+              '0%': { transform: 'scale(0.6)', opacity: '0' },
+              '100%': { transform: 'scale(1)', opacity: '1' }
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+    ::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.4); border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.8); }
+
+    .digit-slot {
+      user-select: none;
+      touch-action: manipulation;
+      transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .spinner-wheel {
+      transition: transform 2.4s cubic-bezier(0.12, 0.84, 0.22, 1);
+      will-change: transform;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .spinner-wheel {
+        transition-duration: 0.2s;
+      }
+    }
+
+    /* PRINT STYLES: A4 PORTRAIT, 2 COLUMNS x 8 ROWS = 16 TEMPLATES (CUT INTO 4 QUARTERS OF 4 ROUNDS EACH) */
+    #printArea { display: none; }
+    @media print {
+      body { background: #ffffff !important; color: #000000 !important; margin: 0 !important; padding: 0 !important; }
+      header, main, .modal-overlay { display: none !important; }
+      #printArea {
+        display: block !important;
+        width: 100%;
+        background: #ffffff !important;
+        color: #000000 !important;
+      }
+      @page {
+        size: A4 portrait;
+        margin: 6mm;
+      }
+      .print-page {
+        page-break-after: always;
+        break-after: page;
+        width: 100%;
+        height: 282mm;
+        box-sizing: border-box;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: repeat(8, 1fr);
+        position: relative;
+      }
+      .print-page:last-child {
+        page-break-after: auto;
+        break-after: auto;
+      }
+      .print-cell {
+        border: 1px solid #cbd5e1;
+        padding: 3px 8px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        box-sizing: border-box;
+        background: #ffffff;
+      }
+      /* Quarter cut lines: vertical center & horizontal center */
+      .print-cell.col-left {
+        border-right: 1.8px dashed #334155;
+        padding-right: 10px;
+      }
+      .print-cell.col-right {
+        border-left: 1.8px dashed #334155;
+        padding-left: 10px;
+      }
+      .print-cell.row-mid-top {
+        border-bottom: 1.8px dashed #334155;
+      }
+      .print-cell.row-mid-bottom {
+        border-top: 1.8px dashed #334155;
+      }
+      .print-cell-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 7.5pt;
+        font-weight: 800;
+        color: #1e293b;
+        line-height: 1.1;
+      }
+      .print-cell-goal {
+        font-size: 7pt;
+        font-weight: 600;
+        color: #475569;
+      }
+      .print-expr-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        flex: 1;
+        font-size: 13pt;
+        font-weight: 900;
+      }
+      .print-box {
+        width: 21px;
+        height: 25px;
+        border: 1.6px solid #000000;
+        border-radius: 3px;
+        display: inline-block;
+        background: #ffffff;
+      }
+      .print-frac {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+      }
+      .print-frac .print-box {
+        width: 19px;
+        height: 18px;
+      }
+      .print-frac-bar {
+        width: 23px;
+        height: 1.6px;
+        background: #000000;
+      }
+      .print-cell-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 7.5pt;
+        font-weight: 700;
+        color: #334155;
+      }
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans antialiased bg-slate-950 text-slate-100 overflow-x-hidden selection:bg-indigo-500 selection:text-white">
+
+  <!-- Header Banner -->
+  <header class="w-full bg-slate-900/85 backdrop-blur border-b border-slate-800 sticky top-0 z-30 px-4 py-3">
+    <div class="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-2">
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="app.showLanding()">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-500 flex items-center justify-center text-white font-extrabold text-xl shadow-lg shadow-indigo-500/30">
+          <i class="fa-solid fa-dharmachakra"></i>
+        </div>
+        <div>
+          <h1 class="font-black text-xl tracking-tight bg-gradient-to-r from-indigo-400 via-purple-300 to-amber-300 bg-clip-text text-transparent">
+            Digit Gridlock
+          </h1>
+          <p class="text-xs text-slate-400 font-medium hidden sm:block">Place-Value, Fractions &amp; Expression Strategy Game</p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-2 sm:space-x-3">
+        <!-- Print Blank Sheets Button -->
+        <button onclick="app.openPrintModal()" title="Print 2x8 quarter-cut A4 sheets for students" class="px-3 py-1.5 rounded-lg bg-indigo-950 hover:bg-indigo-900 text-indigo-300 hover:text-white text-xs font-bold border border-indigo-500/30 transition flex items-center space-x-1.5 shadow">
+          <i class="fa-solid fa-print"></i>
+          <span class="hidden sm:inline">Print Sheets</span>
+        </button>
+
+        <!-- Sound Toggle -->
+        <button id="muteBtn" onclick="app.toggleSound()" title="Toggle sound effects" class="hidden px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center space-x-2 transition border border-slate-700">
+          <i id="muteIcon" class="fa-solid fa-volume-xmark text-slate-500"></i>
+          <span id="muteText" class="hidden sm:inline">Sound off</span>
+        </button>
+
+        <!-- Status Pill -->
+        <div class="px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-800 border border-slate-700 flex items-center space-x-2">
+          <span id="statusDot" class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
+          <span id="statusText" class="text-slate-300">Ready</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Dynamic View Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col justify-center">
+
+    <!-- 1. LANDING / CONFIGURATION VIEW -->
+    <section id="viewLanding" class="max-w-5xl w-full mx-auto space-y-6">
+      <div class="text-center space-y-2">
+        <h2 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">Place Every Digit Wisely</h2>
+        <p class="text-slate-400 max-w-2xl mx-auto text-sm sm:text-base">
+          Spin digits from 0 to 9 one at a time. Lock each digit into an open slot of the expression before the next spin to hit your round goal!
+        </p>
+      </div>
+
+      <!-- Play Mode Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Classroom Projector (Off-Screen Scrap Paper / Whiteboard) -->
+        <div class="bg-gradient-to-b from-amber-950/40 to-slate-900 border border-amber-500/40 hover:border-amber-500/80 rounded-2xl p-5 flex flex-col justify-between space-y-4 shadow-xl transition hover:-translate-y-1">
+          <div>
+            <div class="w-12 h-12 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-2xl mb-3 border border-amber-500/30">
+              <i class="fa-solid fa-chalkboard-user"></i>
+            </div>
+            <h3 class="text-xl font-bold text-white">Classroom Projector</h3>
+            <p class="text-xs text-slate-400 mt-1">Students write on scrap paper, whiteboards, or printed quarter-sheets. Includes instant result claim checker &amp; solver.</p>
+          </div>
+          <button onclick="app.startClassroomHost()" class="w-full py-3 px-4 rounded-xl font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-600/30 transition flex items-center justify-center space-x-2">
+            <span>Launch Screen Host</span>
+            <i class="fa-solid fa-display text-sm"></i>
+          </button>
+        </div>
+
+        <!-- Online Room Host -->
+        <div class="bg-gradient-to-b from-indigo-950/40 to-slate-900 border border-indigo-500/30 hover:border-indigo-500/70 rounded-2xl p-5 flex flex-col justify-between space-y-4 shadow-xl transition hover:-translate-y-1">
+          <div>
+            <div class="w-12 h-12 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-2xl mb-3 border border-indigo-500/30">
+              <i class="fa-solid fa-crown"></i>
+            </div>
+            <h3 class="text-xl font-bold text-white">Online Room Host</h3>
+            <p class="text-xs text-slate-400 mt-1">Host a live multi-device game with a 4-digit room code where students place digits on their screens.</p>
+          </div>
+          <button onclick="app.setupHostLobby()" class="w-full py-3 px-4 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition flex items-center justify-center space-x-2">
+            <span>Create Room</span>
+            <i class="fa-solid fa-arrow-right text-sm"></i>
+          </button>
+        </div>
+
+        <!-- Join Online Room -->
+        <div class="bg-gradient-to-b from-purple-950/40 to-slate-900 border border-purple-500/30 hover:border-purple-500/70 rounded-2xl p-5 flex flex-col justify-between space-y-4 shadow-xl transition hover:-translate-y-1">
+          <div>
+            <div class="w-12 h-12 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center text-2xl mb-3 border border-purple-500/30">
+              <i class="fa-solid fa-users"></i>
+            </div>
+            <h3 class="text-xl font-bold text-white">Join Online Room</h3>
+            <p class="text-xs text-slate-400 mt-1">Enter a 4-digit code provided by your teacher to play on your own device.</p>
+          </div>
+          <button onclick="app.showJoinForm()" class="w-full py-3 px-4 rounded-xl font-bold bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-600/30 transition flex items-center justify-center space-x-2">
+            <span>Join with Code</span>
+            <i class="fa-solid fa-right-to-bracket text-sm"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Host Multi-Round Configuration Panel -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl space-y-5">
+        <div class="border-b border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h4 class="font-bold text-white text-base">Host Round Planner &amp; Settings</h4>
+            <p class="text-xs text-slate-400">Pre-select different templates and aims for each round, or use Surprise Me.</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" onclick="app.randomizeAllRounds()" class="px-3.5 py-2 rounded-xl bg-purple-600/25 hover:bg-purple-600/40 text-purple-200 border border-purple-500/40 text-xs font-extrabold transition flex items-center gap-1.5 shadow">
+              <i class="fa-solid fa-shuffle text-purple-300"></i>
+              <span>Surprise Me (All Rounds)</span>
+            </button>
+            <button type="button" onclick="app.openPrintModal()" class="px-3.5 py-2 rounded-xl bg-indigo-600/25 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/40 text-xs font-extrabold transition flex items-center gap-1.5 shadow">
+              <i class="fa-solid fa-print text-indigo-300"></i>
+              <span>Print 4-Round Sheets</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Global Controls Row -->
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Planned Rounds</label>
+            <select id="selectPlannedRoundCount" onchange="app.setPlannedRoundCount(this.value)" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-bold text-sm focus:outline-none focus:border-indigo-500">
+              <option value="1">1 Round</option>
+              <option value="2">2 Rounds</option>
+              <option value="3">3 Rounds</option>
+              <option value="4" selected>4 Rounds (Quarter-Sheet)</option>
+              <option value="5">5 Rounds</option>
+              <option value="6">6 Rounds</option>
+              <option value="8">8 Rounds</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Time Per Spin</label>
+            <select id="selectTimerDuration" onchange="app.updateTimerSetting(this.value)" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-semibold text-sm focus:outline-none focus:border-indigo-500">
+              <option value="10">10 Seconds</option>
+              <option value="15">15 Seconds</option>
+              <option value="20" selected>20 Seconds (Default)</option>
+              <option value="30">30 Seconds</option>
+              <option value="45">45 Seconds</option>
+              <option value="0">Manual (No Auto-Spin)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Host Name</label>
+            <input type="text" id="inputHostName" placeholder="e.g. Mr Taylor" maxlength="14" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-indigo-500 font-medium text-sm">
+          </div>
+
+          <div class="flex flex-col justify-end">
+            <label class="flex items-center justify-between gap-3 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 cursor-pointer select-none h-[42px]">
+              <span class="text-xs font-bold text-white"><i class="fa-solid fa-volume-high text-indigo-400 mr-1.5"></i>Sound</span>
+              <input type="checkbox" id="inputSoundEnabled" class="sr-only peer" onchange="app.setSoundEnabled(this.checked)">
+              <span class="relative shrink-0 w-9 h-5 rounded-full bg-slate-700 peer-checked:bg-indigo-600 transition after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-4 after:h-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Per-Round Planner List -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-extrabold uppercase tracking-wider text-indigo-400">Round-by-Round Setup</span>
+            <span class="text-[11px] text-slate-400">Any extra rounds after planned rounds automatically use Surprise Me</span>
+          </div>
+          <div id="roundPlannerRows" class="space-y-2.5">
+            <!-- Dynamically populated by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Solo Practice Link -->
+      <div class="text-center">
+        <button onclick="app.startOfflinePractice()" class="text-xs font-semibold text-slate-400 hover:text-white transition underline decoration-dashed underline-offset-4">
+          <i class="fa-solid fa-robot mr-1"></i> Play Solo Practice Mode (vs AI Bots)
+        </button>
+      </div>
+    </section>
+
+    <!-- 2. JOIN ONLINE ROOM VIEW -->
+    <section id="viewJoinForm" class="hidden max-w-md w-full mx-auto bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-6">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+        <h3 class="text-xl font-bold text-white flex items-center space-x-2">
+          <i class="fa-solid fa-door-open text-purple-400"></i>
+          <span>Join Digit Gridlock</span>
+        </h3>
+        <button id="joinCloseBtn" onclick="app.showLanding()" class="text-slate-400 hover:text-white transition">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <p id="joinInviteNote" class="hidden text-sm text-purple-200 bg-purple-950/40 border border-purple-500/30 rounded-xl px-4 py-3">
+          <i class="fa-solid fa-link mr-1"></i> You've been invited to a room. Enter your name to join!
+        </p>
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Your Name</label>
+          <input type="text" id="inputPlayerName" placeholder="e.g. Alex" maxlength="14" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 font-medium">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">4-Digit Room Code</label>
+          <input type="text" id="inputRoomCode" placeholder="e.g. 4829" maxlength="4" pattern="[0-9]*" inputmode="numeric" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-2xl tracking-widest text-center font-mono font-bold text-purple-400 focus:outline-none focus:border-purple-500">
+        </div>
+      </div>
+
+      <div class="flex space-x-3 pt-2">
+        <button id="joinCancelBtn" onclick="app.showLanding()" class="w-1/3 py-3 rounded-xl font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition">Cancel</button>
+        <button id="joinConnectBtn" onclick="app.connectAsPlayer()" class="w-2/3 py-3 rounded-xl font-bold bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-600/30 transition flex items-center justify-center space-x-2">
+          <span>Connect Now</span>
+          <i class="fa-solid fa-plug text-sm"></i>
+        </button>
+      </div>
+    </section>
+
+    <!-- 3. ONLINE LOBBY VIEW -->
+    <section id="viewLobby" class="hidden max-w-3xl w-full mx-auto space-y-6">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-950/70 rounded-xl p-4 border border-indigo-500/20">
+          <div>
+            <span class="text-xs uppercase font-extrabold tracking-wider text-indigo-400 block">Room Code</span>
+            <div class="flex items-center space-x-3">
+              <span id="lobbyRoomCode" class="text-4xl font-black font-mono tracking-widest text-white">----</span>
+              <button id="copyCodeBtn" onclick="app.copyRoomCode()" class="px-2.5 py-1 text-xs font-semibold rounded-md bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 transition">
+                <i class="fa-regular fa-copy mr-1"></i> Copy
+              </button>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <div id="lobbyRulesBadge" class="px-3 py-2 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-200 text-xs font-bold"></div>
+          </div>
+        </div>
+
+        <div id="lobbyShareRow" class="hidden flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/70 rounded-xl p-4 border border-indigo-500/20">
+          <div class="min-w-0">
+            <span class="text-xs uppercase font-extrabold tracking-wider text-indigo-400 block">Share Link</span>
+            <span id="lobbyShareLink" class="text-xs font-mono text-slate-300 break-all block mt-1"></span>
+          </div>
+          <button id="copyLinkBtn" onclick="app.copyInviteLink()" class="shrink-0 px-3 py-2 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition">
+            <i class="fa-solid fa-link mr-1"></i> Copy Link
+          </button>
+        </div>
+
+        <div id="playerWaitingNotice" class="hidden border rounded-xl p-4 text-center space-y-2"></div>
+
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="font-bold text-slate-200 text-sm flex items-center space-x-2">
+              <i class="fa-solid fa-users text-indigo-400"></i>
+              <span>Players in Lobby (<span id="connectedPlayerCount">1</span>)</span>
+            </h4>
+            <span class="text-xs text-slate-400">Spin #1 begins when Host starts</span>
+          </div>
+          <div id="lobbyPlayersList" class="grid grid-cols-2 sm:grid-cols-3 gap-3"></div>
+        </div>
+
+        <div id="hostLobbyControls" class="pt-4 border-t border-slate-800 flex flex-col sm:flex-row gap-3">
+          <button onclick="app.startMultiplayerGame()" class="flex-1 py-4 px-6 rounded-xl font-extrabold text-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20 transition flex items-center justify-center space-x-3">
+            <i class="fa-solid fa-play"></i>
+            <span>START GAME &amp; SPIN #1</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. CLASSROOM PROJECTOR VIEW (OFF-SCREEN SCRAP PAPER / WHITEBOARD MODE) -->
+    <section id="viewClassroomHost" class="hidden space-y-5 max-w-6xl w-full mx-auto">
+
+      <!-- Top Control Bar -->
+      <div class="bg-slate-900/90 border border-amber-500/30 rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-xl font-bold border border-amber-500/30">
+            <i class="fa-solid fa-display"></i>
+          </div>
+          <div>
+            <span id="classroomRoundSubLabel" class="text-xs font-bold text-amber-400 uppercase tracking-widest">Round 1 of 4 • Classroom Projector</span>
+            <h3 id="classroomGoalHeader" class="text-base font-extrabold text-white">Goal: Largest Possible Result</h3>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-2 sm:space-x-3 flex-wrap">
+          <!-- Check Student's Claim Button -->
+          <button onclick="app.openCheckClaimModal()" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-sm transition shadow-lg shadow-amber-500/20 flex items-center space-x-2 border border-amber-300">
+            <i class="fa-solid fa-clipboard-check text-base"></i>
+            <span>CHECK STUDENT'S CLAIM</span>
+          </button>
+
+          <!-- Replay Same Round -->
+          <button onclick="app.replayClassroomCurrentRound()" title="Replay this round with fresh spins" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition border border-slate-700">
+            <i class="fa-solid fa-rotate-left mr-1"></i> Replay
+          </button>
+
+          <!-- Next Round Button -->
+          <button onclick="app.advanceClassroomNextRound()" title="Advance to the next planned round" class="px-3.5 py-2.5 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 font-bold text-xs transition border border-indigo-500/40">
+            <i class="fa-solid fa-forward-step mr-1"></i> Next Round
+          </button>
+
+          <!-- Pause / Resume -->
+          <button id="classroomPauseBtn" onclick="app.togglePauseGame()" title="Pause countdown timer" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition border border-slate-700">
+            <i id="classroomPauseIcon" class="fa-solid fa-pause"></i>
+          </button>
+
+          <!-- Exit -->
+          <button onclick="app.showLanding()" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white font-bold text-xs transition border border-slate-700">
+            <i class="fa-solid fa-right-from-bracket mr-1"></i> Setup
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Projector Stage -->
+      <div class="bg-gradient-to-b from-slate-900 to-slate-950 border-2 border-indigo-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden">
+
+        <!-- Top Status Pill + Timer -->
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center flex-wrap gap-2">
+            <span id="classroomPhaseBadge" class="text-xs sm:text-sm font-extrabold text-indigo-300 uppercase tracking-widest bg-indigo-950/90 border border-indigo-500/30 px-4 py-1.5 rounded-full">
+              ROUND 1 — PREPARE YOUR PAPER
+            </span>
+            <span id="classroomGoalPill" class="text-xs sm:text-sm font-extrabold text-amber-300 bg-amber-950/70 border border-amber-500/30 px-4 py-1.5 rounded-full">
+              Aim: Largest Result
+            </span>
+          </div>
+
+          <div id="classroomTimerWrap" class="hidden flex items-center space-x-2 text-slate-300">
+            <i class="fa-regular fa-clock text-indigo-400"></i>
+            <span class="text-xs uppercase font-bold text-slate-400">Placement Time:</span>
+            <span id="classroomTimerText" class="font-mono text-xl font-black text-amber-400">20s</span>
+          </div>
+        </div>
+
+        <!-- PRE-GAME READY SCREEN (Students draw boxes on scrap paper/whiteboard) -->
+        <div id="classroomReadyPanel" class="py-6 sm:py-8 text-center space-y-6">
+          <div class="space-y-2">
+            <h2 id="readyRoundHeading" class="text-2xl sm:text-4xl font-black text-white tracking-tight">Round 1: Draw This Template</h2>
+            <p class="text-sm sm:text-lg text-slate-300 max-w-2xl mx-auto">
+              Copy the empty boxes and symbols below onto your paper or mini-whiteboard. You will place <strong id="readySlotCount" class="text-amber-400">5</strong> spun digits one by one!
+            </p>
+          </div>
+
+          <!-- Large Expression Template Preview -->
+          <div id="classroomTemplateDiagram" class="flex flex-wrap items-center justify-center gap-3 sm:gap-4 py-5 px-5 bg-slate-950/80 border border-slate-800 rounded-2xl max-w-3xl mx-auto">
+            <!-- Rendered by JS -->
+          </div>
+
+          <p id="readyFractionTip" class="text-xs text-slate-400">
+            Once you write a digit in a box, it cannot be moved! Leading zeros (like <code class="text-slate-200 font-mono">045</code> = <code class="text-slate-200 font-mono">45</code>) are allowed.
+          </p>
+
+          <div class="pt-2 flex justify-center">
+            <button onclick="app.classroomBeginGame()" class="py-5 px-12 rounded-2xl font-black text-xl sm:text-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-2xl shadow-emerald-500/30 transition transform hover:scale-105 active:scale-95 flex items-center space-x-3">
+              <i class="fa-solid fa-play"></i>
+              <span>EVERYONE READY — SPIN #1</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- LIVE SPINNER STAGE -->
+        <div id="classroomLiveStage" class="hidden space-y-6">
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+
+            <!-- Left: Animated 0-9 Wheel Spinner -->
+            <div class="lg:col-span-5 flex flex-col items-center justify-center">
+              <div id="classroomWheelMount" class="relative w-64 h-64 sm:w-72 sm:h-72 flex items-center justify-center">
+                <!-- SVG Wheel rendered here -->
+              </div>
+            </div>
+
+            <!-- Right: Current Spun Digit, Template Reminder & Controls -->
+            <div class="lg:col-span-7 flex flex-col items-center lg:items-start text-center lg:text-left space-y-5">
+              <div class="w-full flex flex-col sm:flex-row items-center gap-4 bg-slate-950/90 border border-slate-800 rounded-2xl p-4 sm:p-5">
+                <div id="classroomCurrentDigitBox" class="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-700 border-2 border-indigo-300/50 flex flex-col items-center justify-center shadow-xl shrink-0">
+                  <span class="text-[10px] font-extrabold uppercase tracking-widest text-indigo-200">Digit</span>
+                  <span id="classroomCurrentDigit" class="text-5xl sm:text-6xl font-black font-mono text-white">?</span>
+                </div>
+                <div class="space-y-1">
+                  <div id="classroomSpinSubtitle" class="text-xs font-extrabold uppercase tracking-wider text-amber-400">Spin #1 of 5</div>
+                  <h3 id="classroomActionHeadline" class="text-xl sm:text-2xl font-black text-white">Watch the spinner!</h3>
+                  <p id="classroomActionSub" class="text-xs sm:text-sm text-slate-400">Get ready to place the spun digit into an empty box.</p>
+                </div>
+              </div>
+
+              <!-- Compact Template Diagram Reminder -->
+              <div class="w-full space-y-1.5">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Expression Template</span>
+                <div id="classroomMiniTemplate" class="flex flex-wrap items-center justify-center lg:justify-start gap-2 bg-slate-950/60 border border-slate-800/80 rounded-xl p-3"></div>
+              </div>
+
+              <!-- Action Buttons -->
+              <div class="w-full flex flex-wrap items-center justify-center lg:justify-start gap-3 pt-1">
+                <button id="classroomSpinBtn" onclick="app.hostTriggerSpin()" class="py-4 px-8 rounded-2xl font-black text-lg sm:text-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-xl shadow-emerald-500/25 transition transform hover:scale-105 active:scale-95 flex items-center space-x-3">
+                  <i class="fa-solid fa-rotate"></i>
+                  <span id="classroomSpinBtnText">SPIN NEXT DIGIT</span>
+                </button>
+
+                <button id="classroomRevealBestBtn" onclick="app.toggleOptimalReveal()" class="hidden py-4 px-6 rounded-2xl font-extrabold text-sm sm:text-base bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg transition flex items-center space-x-2">
+                  <i class="fa-solid fa-wand-magic-sparkles"></i>
+                  <span>Reveal Optimal Solution</span>
+                </button>
+
+                <button id="classroomNextRoundStageBtn" onclick="app.advanceClassroomNextRound()" class="hidden py-4 px-6 rounded-2xl font-extrabold text-sm sm:text-base bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-lg transition flex items-center space-x-2">
+                  <span>Next Round</span>
+                  <i class="fa-solid fa-arrow-right"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Optimal Solution Reveal Drawer (Hidden until host clicks Reveal) -->
+          <div id="classroomOptimalDrawer" class="hidden bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-5 space-y-3 animate-pop">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-extrabold uppercase tracking-wider text-emerald-400 flex items-center gap-2">
+                <i class="fa-solid fa-trophy text-amber-400"></i>
+                <span>Mathematical Best Possible Arrangement</span>
+              </span>
+              <button onclick="app.toggleOptimalReveal()" class="text-xs text-slate-400 hover:text-white">Hide</button>
+            </div>
+            <div id="classroomOptimalContent" class="flex flex-col sm:flex-row sm:items-center justify-between gap-4"></div>
+          </div>
+
+          <!-- Progress Timer Bar -->
+          <div id="classroomTimerBarWrap" class="w-full bg-slate-950 rounded-full h-3.5 p-0.5 border border-slate-800 overflow-hidden">
+            <div id="classroomTimerProgressBar" class="bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500 h-full rounded-full transition-all duration-1000 ease-linear" style="width: 100%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Spun Digits History Strip -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <h4 class="font-bold text-slate-200 text-sm flex items-center space-x-2">
+            <i class="fa-solid fa-clock-rotate-left text-indigo-400"></i>
+            <span>Spun Digits (<span id="classroomSpinCountLabel">0 / 5</span>)</span>
+          </h4>
+          <span class="text-xs text-slate-400">Every student uses these exact digits</span>
+        </div>
+        <div id="classroomHistoryList" class="flex items-center gap-2.5 overflow-x-auto pb-1 min-h-[54px]">
+          <span class="text-xs text-slate-500 italic">No digits spun yet. Click "Everyone Ready — Spin #1" to start!</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. ON-SCREEN MULTIPLAYER & SOLO PRACTICE GAMEPLAY VIEW -->
+    <section id="viewGameplay" class="hidden space-y-6">
+      <!-- Top Bar -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div class="flex items-center space-x-4">
+            <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-700 flex flex-col items-center justify-center shadow-lg border-2 border-indigo-400/40 shrink-0">
+              <span class="text-[10px] font-extrabold text-indigo-200 uppercase tracking-widest">Spun</span>
+              <span id="onlineSpunDigit" class="text-3xl sm:text-4xl font-black font-mono text-white">--</span>
+            </div>
+            <div>
+              <div class="flex items-center flex-wrap gap-2">
+                <span id="onlineRoundBadge" class="text-xs font-extrabold px-2.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800">Round 1</span>
+                <span id="onlineSpinBadge" class="text-xs font-extrabold px-2.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">Spin #1</span>
+                <span id="onlineGoalBadge" class="text-xs font-extrabold px-2.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">Goal: Largest</span>
+              </div>
+              <h3 id="onlinePromptTitle" class="text-base sm:text-lg font-bold text-white mt-1">Tap an empty slot to place this digit!</h3>
+              <p id="onlinePromptHint" class="text-xs text-slate-400">Once the next digit spins, placed digits lock permanently.</p>
+            </div>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <button id="hostForceSpinBtn" onclick="app.hostTriggerSpin()" class="hidden px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center space-x-1.5 shadow">
+              <i class="fa-solid fa-rotate"></i>
+              <span>Spin Next</span>
+            </button>
+            <button id="hostPauseBtn" onclick="app.togglePauseGame()" class="hidden px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition border border-slate-700">
+              <i id="pauseIcon" class="fa-solid fa-pause"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <div class="flex justify-between items-center text-xs font-semibold">
+            <span class="text-slate-400"><i class="fa-regular fa-clock text-indigo-400 mr-1"></i>Time Remaining</span>
+            <span id="timerSeconds" class="font-mono text-indigo-300 font-bold">20s</span>
+          </div>
+          <div class="w-full bg-slate-950 rounded-full h-3 p-0.5 border border-slate-800 overflow-hidden">
+            <div id="timerProgressBar" class="bg-gradient-to-r from-emerald-500 via-yellow-400 to-rose-500 h-full rounded-full transition-all duration-1000 ease-linear" style="width: 100%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Grid: My Interactive Expression + Live Opponents Matrix -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl flex flex-col justify-between space-y-6">
+          <div class="flex items-center justify-between">
+            <h3 class="font-bold text-lg text-white">Your Expression</h3>
+            <span id="onlineLiveResultBadge" class="text-xs font-mono font-bold bg-slate-950 text-slate-300 px-3 py-1 rounded-full border border-slate-800">
+              In Progress...
+            </span>
+          </div>
+
+          <!-- Spinner + Interactive Slots -->
+          <div class="flex flex-col items-center space-y-6 my-auto py-2">
+            <div id="onlineWheelMount" class="relative w-44 h-44 sm:w-52 sm:h-52 flex items-center justify-center"></div>
+
+            <!-- Interactive Expression Builder -->
+            <div id="onlineExpressionBoard" class="flex flex-wrap items-center justify-center gap-3 sm:gap-4 p-4 sm:p-6 bg-slate-950/90 border border-slate-800 rounded-2xl w-full">
+              <!-- Slots rendered by JS -->
+            </div>
+          </div>
+
+          <!-- Spun History Strip -->
+          <div class="pt-3 border-t border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+            <span class="text-xs font-bold text-slate-400 uppercase">Spun History:</span>
+            <div id="onlineHistoryStrip" class="flex items-center gap-1.5 flex-wrap"></div>
+          </div>
+        </div>
+
+        <!-- Opponents Live Slot Matrix -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between space-y-4">
+          <div>
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+              <h3 class="font-bold text-sm text-slate-200 flex items-center space-x-2">
+                <i class="fa-solid fa-users-viewfinder text-emerald-400"></i>
+                <span>Classmates' Boards</span>
+              </h3>
+              <span class="text-xs text-slate-400">Live Slots</span>
+            </div>
+            <div id="opponentsMatrixContainer" class="space-y-3 max-h-[440px] overflow-y-auto pr-1"></div>
+          </div>
+          <div class="pt-3 border-t border-slate-800 flex items-center justify-around text-xs text-slate-400">
+            <div class="flex items-center space-x-1.5">
+              <span class="w-3 h-3 rounded bg-slate-800 border border-slate-700 inline-block"></span>
+              <span>Empty</span>
+            </div>
+            <div class="flex items-center space-x-1.5">
+              <span class="w-3 h-3 rounded bg-emerald-500 inline-block"></span>
+              <span>Placed</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL: CHECK STUDENT'S CLAIM BY FINAL RESULT (CLASSROOM PROJECTOR MODE) -->
+  <div id="modalCheckClaim" class="modal-overlay fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-amber-500/40 rounded-3xl p-6 sm:p-8 max-w-xl w-full max-h-[92vh] overflow-y-auto space-y-5 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-xl font-bold border border-amber-500/30">
+            <i class="fa-solid fa-clipboard-check"></i>
+          </div>
+          <div>
+            <h3 class="text-xl font-black text-white">Check Student's Claim</h3>
+            <p class="text-xs text-slate-400">Enter the final result claimed by the student to check if it is achievable</p>
+          </div>
+        </div>
+        <button onclick="app.closeCheckClaimModal()" class="text-slate-400 hover:text-white transition">
+          <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+      </div>
+
+      <!-- Spun Digits Pool Reference -->
+      <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2">
+        <span class="text-xs font-bold text-slate-400 uppercase">Spun Digits Pool:</span>
+        <div id="claimSpunReference" class="flex items-center gap-1.5 flex-wrap font-mono"></div>
+      </div>
+
+      <!-- Final Result Input + Optional Student Name -->
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Claimed Final Result</label>
+          <input type="text" id="claimFinalValueInput" placeholder="e.g. 542, 43.25, 7/6, or 1 1/6"
+            class="w-full bg-slate-950 border-2 border-slate-700 focus:border-amber-400 rounded-2xl px-4 py-3.5 text-2xl font-mono font-black text-amber-400 text-center focus:outline-none">
+          <p class="text-[11px] text-slate-400 text-center mt-1.5">
+            Supports whole numbers, negatives, decimals, improper fractions (<code class="text-slate-300">7/6</code>), or mixed numbers (<code class="text-slate-300">1 1/6</code>).
+          </p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Student Name (Optional — to log on Class Leaderboard)</label>
+          <input type="text" id="claimStudentName" placeholder="e.g. Maya" maxlength="16" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm font-semibold text-white focus:outline-none focus:border-amber-500">
+        </div>
+
+        <!-- Verification Result Output -->
+        <div id="claimResultOutput" class="hidden rounded-2xl p-4 space-y-3 border"></div>
+
+        <!-- Verified Classroom Claims Leaderboard -->
+        <div id="classroomVerifiedBoard" class="hidden bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-extrabold uppercase tracking-wider text-indigo-400">
+              <i class="fa-solid fa-ranking-star mr-1"></i>Verified Class Claims
+            </span>
+            <button onclick="app.clearVerifiedClaims()" class="text-[11px] text-slate-500 hover:text-rose-400">Clear</button>
+          </div>
+          <div id="classroomVerifiedList" class="space-y-1.5"></div>
+        </div>
+      </div>
+
+      <div class="flex space-x-3 pt-2">
+        <button onclick="app.closeCheckClaimModal()" class="w-1/3 py-3 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition">Close</button>
+        <button onclick="app.verifyStudentClaim()" class="w-2/3 py-3 rounded-xl font-extrabold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/20 transition flex items-center justify-center space-x-2">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <span>VERIFY RESULT</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: PRINT 2x8 QUARTER-CUT A4 WORKSHEETS -->
+  <div id="modalPrintSheets" class="modal-overlay fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-indigo-500/40 rounded-3xl p-6 sm:p-8 max-w-md w-full space-y-5 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xl font-bold border border-indigo-500/30">
+            <i class="fa-solid fa-print"></i>
+          </div>
+          <div>
+            <h3 class="text-xl font-black text-white">Print Quarter-Cut Sheets</h3>
+            <p class="text-xs text-slate-400">2 columns × 8 rows per A4 page (4 rounds per quarter)</p>
+          </div>
+        </div>
+        <button onclick="app.closePrintModal()" class="text-slate-400 hover:text-white transition">
+          <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs text-slate-300 leading-relaxed">
+          <i class="fa-solid fa-scissors text-indigo-400 mr-1.5"></i>
+          Each A4 sheet prints <strong>16 templates</strong> (2 columns × 8 rows). Cut once vertically and once horizontally to get <strong>4 quarters</strong> — giving each student <strong>Rounds 1 to 4</strong>!
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Templates in Each 4-Round Quarter</label>
+          <div class="grid grid-cols-1 gap-2">
+            <label class="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer hover:border-indigo-500 has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-950/30">
+              <input type="radio" name="printMode" value="planned" checked class="accent-indigo-500">
+              <div>
+                <span class="text-xs font-bold text-white block">Use Planned Rounds 1–4</span>
+                <span class="text-[11px] text-slate-400">Matches your Round 1–4 setup (Surprise Me slots resolve automatically)</span>
+              </div>
+            </label>
+            <label class="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer hover:border-indigo-500 has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-950/30">
+              <input type="radio" name="printMode" value="current" class="accent-indigo-500">
+              <div>
+                <span class="text-xs font-bold text-white block">Repeat Round 1 Template × 4</span>
+                <span class="text-[11px] text-slate-400">Prints 4 copies of your Round 1 expression per student quarter</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Number of A4 Sheets to Print</label>
+          <select id="selectPrintPages" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-bold text-sm focus:outline-none focus:border-indigo-500">
+            <option value="1">1 A4 Sheet (4 Students)</option>
+            <option value="4">4 A4 Sheets (16 Students)</option>
+            <option value="7" selected>7 A4 Sheets (28 Students)</option>
+            <option value="8">8 A4 Sheets (32 Students)</option>
+            <option value="10">10 A4 Sheets (40 Students)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex space-x-3 pt-2">
+        <button onclick="app.closePrintModal()" class="w-1/3 py-3 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition">Cancel</button>
+        <button onclick="app.generateAndPrintSheets()" class="w-2/3 py-3 rounded-xl font-extrabold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition flex items-center justify-center space-x-2">
+          <i class="fa-solid fa-print text-sm"></i>
+          <span>Generate &amp; Print</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ONLINE / SOLO ROUND RESULTS PODIUM -->
+  <div id="resultsModal" class="modal-overlay fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-indigo-500/40 rounded-3xl p-6 sm:p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto space-y-5 shadow-2xl animate-pop">
+      <div class="text-center space-y-2">
+        <div class="w-16 h-16 bg-gradient-to-tr from-amber-400 to-yellow-500 rounded-full flex items-center justify-center mx-auto shadow-xl shadow-amber-500/30 text-slate-950 text-3xl">
+          <i class="fa-solid fa-trophy"></i>
+        </div>
+        <h2 id="resultsRoundTitle" class="text-2xl sm:text-3xl font-black text-white">Round 1 Results!</h2>
+        <p id="resultsGoalSummary" class="text-xs sm:text-sm text-indigo-300 font-semibold"></p>
+      </div>
+
+      <!-- Optimal Solution Box -->
+      <div id="resultsOptimalBox" class="bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-3.5 text-center space-y-1"></div>
+
+      <!-- Player Standings -->
+      <div class="space-y-2">
+        <span class="text-xs font-extrabold uppercase tracking-wider text-slate-400 block">Leaderboard</span>
+        <div id="resultsLeaderboardList" class="space-y-2"></div>
+      </div>
+
+      <div class="flex gap-3 pt-2">
+        <button onclick="app.closeResultsModal()" class="w-1/3 py-3 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition">Close</button>
+        <button id="resultsNextRoundBtn" onclick="app.advanceOnlineNextRound()" class="w-2/3 py-3 rounded-xl font-extrabold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg transition">
+          Start Next Round
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRINT CONTAINER -->
+  <div id="printArea"></div>
+
+  <script>
+    function esc(str) {
+      return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function gcd(a, b) {
+      a = Math.abs(Math.round(a));
+      b = Math.abs(Math.round(b));
+      while (b !== 0) {
+        const t = b;
+        b = a % b;
+        a = t;
+      }
+      return a || 1;
+    }
+
+    function simplifyFraction(num, den) {
+      if (den === 0) return null;
+      if (num === 0) return { num: 0, den: 1 };
+      const sign = (num < 0) ^ (den < 0) ? -1 : 1;
+      const g = gcd(num, den);
+      return { num: sign * Math.abs(num) / g, den: Math.abs(den) / g };
+    }
+
+    function formatRationalDisplay(num, den) {
+      const f = simplifyFraction(num, den);
+      if (!f) return 'Undefined';
+      if (f.den === 1) return String(f.num);
+      const absNum = Math.abs(f.num);
+      if (absNum > f.den) {
+        const whole = Math.trunc(f.num / f.den);
+        const rem = absNum % f.den;
+        return `${f.num}/${f.den} (${whole} ${rem}/${f.den})`;
+      }
+      return `${f.num}/${f.den}`;
+    }
+
+    /**
+     * Parse student's claimed result: supports integers, decimals, fractions ("7/6"), and mixed numbers ("1 1/6", "-2 3/4")
+     */
+    function parseClaimedValue(raw) {
+      const s = String(raw || '').trim();
+      if (!s) return { valid: false };
+
+      // Mixed number: e.g. "-1 2/3" or "2 3/4"
+      const mixedMatch = s.match(/^([+-]?\d+)\s+(\d+)\s*\/\s*(\d+)$/);
+      if (mixedMatch) {
+        const whole = parseInt(mixedMatch[1], 10);
+        const num = parseInt(mixedMatch[2], 10);
+        const den = parseInt(mixedMatch[3], 10);
+        if (den === 0) return { valid: false };
+        const sign = whole < 0 || mixedMatch[1].startsWith('-') ? -1 : 1;
+        const val = sign * (Math.abs(whole) + num / den);
+        return { valid: true, value: val, display: s };
+      }
+
+      // Simple fraction: e.g. "7/6" or "-3/4"
+      const fracMatch = s.match(/^([+-]?\d+)\s*\/\s*(\d+)$/);
+      if (fracMatch) {
+        const num = parseInt(fracMatch[1], 10);
+        const den = parseInt(fracMatch[2], 10);
+        if (den === 0) return { valid: false };
+        return { valid: true, value: num / den, display: formatRationalDisplay(num, den) };
+      }
+
+      // Standard integer or decimal
+      if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(s)) {
+        const val = parseFloat(s);
+        if (!Number.isNaN(val) && Number.isFinite(val)) {
+          return { valid: true, value: val, display: s };
+        }
+      }
+
+      return { valid: false };
+    }
+
+    /**
+     * Expression Templates Registry
+     * tokens:
+     *   - number `i`: single digit box for slot index `i`
+     *   - string: operator / punctuation (`+`, `−`, `×`, `.`, `(`, `)`)
+     *   - `{ type: 'frac', num: i, den: j }`: stacked fraction numerator slot `i` over denominator slot `j`
+     */
+    const TEMPLATES = {
+      sub_3_2: {
+        id: 'sub_3_2',
+        name: '3-Digit − 2-Digit',
+        category: 'Whole Numbers',
+        slots: 5,
+        tokens: [0, 1, 2, '−', 3, 4],
+        defaultTarget: 450,
+        targetOptions: [150, 200, 250, 300, 350, 400, 450, 500, 600, 700],
+        isFraction: false,
+        evalDigits(d) {
+          return (100 * d[0] + 10 * d[1] + d[2]) - (10 * d[3] + d[4]);
+        },
+        formatFilled(d) {
+          return `${d[0]}${d[1]}${d[2]} − ${d[3]}${d[4]}`;
+        },
+        formatValue(val) {
+          return Number(val).toLocaleString('en-US', { maximumFractionDigits: 4 });
+        }
+      },
+      add_3_2: {
+        id: 'add_3_2',
+        name: '3-Digit + 2-Digit',
+        category: 'Whole Numbers',
+        slots: 5,
+        tokens: [0, 1, 2, '+', 3, 4],
+        defaultTarget: 600,
+        targetOptions: [300, 400, 450, 500, 550, 600, 700, 750, 850, 900],
+        isFraction: false,
+        evalDigits(d) {
+          return (100 * d[0] + 10 * d[1] + d[2]) + (10 * d[3] + d[4]);
+        },
+        formatFilled(d) {
+          return `${d[0]}${d[1]}${d[2]} + ${d[3]}${d[4]}`;
+        },
+        formatValue(val) {
+          return Number(val).toLocaleString('en-US', { maximumFractionDigits: 4 });
+        }
+      },
+      sub_3_3: {
+        id: 'sub_3_3',
+        name: '3-Digit − 3-Digit',
+        category: 'Whole Numbers',
+        slots: 6,
+        tokens: [0, 1, 2, '−', 3, 4, 5],
+        defaultTarget: 250,
+        targetOptions: [50, 100, 150, 200, 250, 300, 350, 400, 450],
+        isFraction: false,
+        evalDigits(d) {
+          return (100 * d[0] + 10 * d[1] + d[2]) - (100 * d[3] + 10 * d[4] + d[5]);
+        },
+        formatFilled(d) {
+          return `${d[0]}${d[1]}${d[2]} − ${d[3]}${d[4]}${d[5]}`;
+        },
+        formatValue(val) {
+          return Number(val).toLocaleString('en-US', { maximumFractionDigits: 4 });
+        }
+      },
+      mul_2_1: {
+        id: 'mul_2_1',
+        name: '2-Digit × 1-Digit',
+        category: 'Multiplication',
+        slots: 3,
+        tokens: [0, 1, '×', 2],
+        defaultTarget: 250,
+        targetOptions: [60, 100, 120, 150, 200, 250, 300, 400, 500],
+        isFraction: false,
+        evalDigits(d) {
+          return (10 * d[0] + d[1]) * d[2];
+        },
+        formatFilled(d) {
+          return `${d[0]}${d[1]} × ${d[2]}`;
+        },
+        formatValue(val) {
+          return Number(val).toLocaleString('en-US', { maximumFractionDigits: 4 });
+        }
+      },
+      mul_2_2: {
+        id: 'mul_2_2',
+        name: '2-Digit × 2-Digit',
+        category: 'Multiplication',
+        slots: 4,
+        tokens: [0, 1, '×', 2, 3],
+        defaultTarget: 2000,
+        targetOptions: [500, 800, 1000, 1500, 2000, 2500, 3000, 4000, 5000],
+        isFraction: false,
+        evalDigits(d) {
+          return (10 * d[0] + d[1]) * (10 * d[2] + d[3]);
+        },
+        formatFilled(d) {
+          return `${d[0]}${d[1]} × ${d[2]}${d[3]}`;
+        },
+        formatValue(val) {
+          return Number(val).toLocaleString('en-US', { maximumFractionDigits: 4 });
+        }
+      },
+      frac_add: {
+        id: 'frac_add',
+        name: 'Fractions: a/b + c/d',
+        category: 'Fractions',
+        slots: 4,
+        tokens: [{ type: 'frac', num: 0, den: 1 }, '+', { type: 'frac', num: 2, den: 3 }],
+        defaultTarget: 1.5,
+        targetOptions: [0.5, 1, 1.5, 2, 2.5, 3, 4, 5],
+        isFraction: true,
+        evalRational(d) {
+          if (d[1] === 0 || d[3] === 0) return null;
+          return simplifyFraction(d[0] * d[3] + d[2] * d[1], d[1] * d[3]);
+        },
+        evalDigits(d) {
+          const r = this.evalRational(d);
+          return r ? r.num / r.den : null;
+        },
+        formatFilled(d) {
+          return `${d[0]}/${d[1]} + ${d[2]}/${d[3]}`;
+        },
+        formatValue(val, d) {
+          if (d) {
+            const r = this.evalRational(d);
+            if (r) {
+              const dec = (Math.round((r.num / r.den) * 10000) / 10000);
+              return r.den === 1 ? `${r.num}` : `${formatRationalDisplay(r.num, r.den)} [≈ ${dec}]`;
+            }
+          }
+          return (Math.round(val * 10000) / 10000).toString();
+        }
+      },
+      frac_sub: {
+        id: 'frac_sub',
+        name: 'Fractions: a/b − c/d',
+        category: 'Fractions',
+        slots: 4,
+        tokens: [{ type: 'frac', num: 0, den: 1 }, '−', { type: 'frac', num: 2, den: 3 }],
+        defaultTarget: 0.5,
+        targetOptions: [0, 0.25, 0.5, 1, 1.5, 2, 3],
+        isFraction: true,
+        evalRational(d) {
+          if (d[1] === 0 || d[3] === 0) return null;
+          return simplifyFraction(d[0] * d[3] - d[2] * d[1], d[1] * d[3]);
+        },
+        evalDigits(d) {
+          const r = this.evalRational(d);
+          return r ? r.num / r.den : null;
+        },
+        formatFilled(d) {
+          return `${d[0]}/${d[1]} − ${d[2]}/${d[3]}`;
+        },
+        formatValue(val, d) {
+          if (d) {
+            const r = this.evalRational(d);
+            if (r) {
+              const dec = (Math.round((r.num / r.den) * 10000) / 10000);
+              return r.den === 1 ? `${r.num}` : `${formatRationalDisplay(r.num, r.den)} [≈ ${dec}]`;
+            }
+          }
+          return (Math.round(val * 10000) / 10000).toString();
+        }
+      },
+      frac_mul: {
+        id: 'frac_mul',
+        name: 'Fractions: a/b × c/d',
+        category: 'Fractions',
+        slots: 4,
+        tokens: [{ type: 'frac', num: 0, den: 1 }, '×', { type: 'frac', num: 2, den: 3 }],
+        defaultTarget: 1,
+        targetOptions: [0.25, 0.5, 1, 1.5, 2, 3, 4, 6],
+        isFraction: true,
+        evalRational(d) {
+          if (d[1] === 0 || d[3] === 0) return null;
+          return simplifyFraction(d[0] * d[2], d[1] * d[3]);
+        },
+        evalDigits(d) {
+          const r = this.evalRational(d);
+          return r ? r.num / r.den : null;
+        },
+        formatFilled(d) {
+          return `${d[0]}/${d[1]} × ${d[2]}/${d[3]}`;
+        },
+        formatValue(val, d) {
+          if (d) {
+            const r = this.evalRational(d);
+            if (r) {
+              const dec = (Math.round((r.num / r.den) * 10000) / 10000);
+              return r.den === 1 ? `${r.num}` : `${formatRationalDisplay(r.num, r.den)} [≈ ${dec}]`;
+            }
+          }
+          return (Math.round(val * 10000) / 10000).toString();
+        }
+      },
+      mixed_add: {
+        id: 'mixed_add',
+        name: 'Mixed & Fraction: a b/c + d/e',
+        category: 'Fractions',
+        slots: 5,
+        tokens: [0, { type: 'frac', num: 1, den: 2 }, '+', { type: 'frac', num: 3, den: 4 }],
+        defaultTarget: 5,
+        targetOptions: [2, 3, 4, 5, 6, 7.5, 8, 10],
+        isFraction: true,
+        evalRational(d) {
+          if (d[2] === 0 || d[4] === 0) return null;
+          const totalNum = d[0] * d[2] * d[4] + d[1] * d[4] + d[3] * d[2];
+          const totalDen = d[2] * d[4];
+          return simplifyFraction(totalNum, totalDen);
+        },
+        evalDigits(d) {
+          const r = this.evalRational(d);
+          return r ? r.num / r.den : null;
+        },
+        formatFilled(d) {
+          return `${d[0]} ${d[1]}/${d[2]} + ${d[3]}/${d[4]}`;
+        },
+        formatValue(val, d) {
+          if (d) {
+            const r = this.evalRational(d);
+            if (r) {
+              const dec = (Math.round((r.num / r.den) * 10000) / 10000);
+              return r.den === 1 ? `${r.num}` : `${formatRationalDisplay(r.num, r.den)} [≈ ${dec}]`;
+            }
+          }
+          return (Math.round(val * 10000) / 10000).toString();
+        }
+      },
+      dec_sub: {
+        id: 'dec_sub',
+        name: 'Decimals: XX.X − X.XX',
+        category: 'Decimals & BIDMAS',
+        slots: 6,
+        tokens: [0, 1, '.', 2, '−', 3, '.', 4, 5],
+        defaultTarget: 35,
+        targetOptions: [10, 15, 20, 25, 30, 35, 40, 50, 60],
+        isFraction: false,
+        evalDigits(d) {
+          const hundredths = (1000 * d[0] + 100 * d[1] + 10 * d[2]) - (100 * d[3] + 10 * d[4] + d[5]);
+          return hundredths / 100;
+        },
+        formatFilled(d) {
+          return `${d[0]}${d[1]}.${d[2]} − ${d[3]}.${d[4]}${d[5]}`;
+        },
+        formatValue(val) {
+          return (Math.round(val * 100) / 100).toString();
+        }
+      },
+      brk_sub_mul: {
+        id: 'brk_sub_mul',
+        name: 'Brackets: (XX − XX) × X',
+        category: 'Decimals & BIDMAS',
+        slots: 5,
+        tokens: ['(', 0, 1, '−', 2, 3, ')', '×', 4],
+        defaultTarget: 150,
+        targetOptions: [0, 40, 60, 100, 120, 150, 200, 250, 300],
+        isFraction: false,
+        evalDigits(d) {
+          return ((10 * d[0] + d[1]) - (10 * d[2] + d[3])) * d[4];
+        },
+        formatFilled(d) {
+          return `(${d[0]}${d[1]} − ${d[2]}${d[3]}) × ${d[4]}`;
+        },
+        formatValue(val) {
+          return Number(val).toLocaleString('en-US', { maximumFractionDigits: 4 });
+        }
+      }
+    };
+
+    const TEMPLATE_KEYS = Object.keys(TEMPLATES);
+
+    /**
+     * Web Audio API Sound Effects
+     */
+    class SoundEngine {
+      constructor() {
+        this.ctx = null;
+        this.muted = true;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) this.ctx = new AudioContext();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      playTick(pitch = 520) {
+        if (this.muted) return;
+        this.init();
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(pitch, this.ctx.currentTime);
+        gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.045);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.045);
+      }
+
+      playChime() {
+        if (this.muted) return;
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        [523.25, 659.25, 783.99].forEach((freq, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.07);
+          gain.gain.setValueAtTime(0.18, now + idx * 0.07);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.07 + 0.25);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now + idx * 0.07);
+          osc.stop(now + idx * 0.07 + 0.25);
+        });
+      }
+
+      playBuzz() {
+        if (this.muted) return;
+        this.init();
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(95, this.ctx.currentTime + 0.22);
+        gain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.22);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.22);
+      }
+
+      playFanfare() {
+        if (this.muted) return;
+        this.init();
+        if (!this.ctx) return;
+        const notes = [523.25, 659.25, 783.99, 1046.50];
+        const now = this.ctx.currentTime;
+        notes.forEach((freq, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.11);
+          gain.gain.setValueAtTime(0.25, now + idx * 0.11);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.11 + 0.55);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now + idx * 0.11);
+          osc.stop(now + idx * 0.11 + 0.55);
+        });
+      }
+    }
+
+    const sound = new SoundEngine();
+
+    class DigitGridlockApp {
+      constructor() {
+        this.mode = 'IDLE'; // 'IDLE', 'CLASSROOM', 'HOST', 'PLAYER', 'OFFLINE'
+
+        // Multi-Round Planner State (default 4 rounds with varied goals/templates)
+        this.plannedRoundCount = 4;
+        this.roundPlans = [
+          { templateId: 'sub_3_2', goal: 'MAX', target: 450 },
+          { templateId: 'sub_3_2', goal: 'MIN', target: 450 },
+          { templateId: 'mul_2_1', goal: 'TARGET', target: 250 },
+          { templateId: 'frac_add', goal: 'MAX', target: 1.5 }
+        ];
+
+        // Active Round State
+        this.currentRoundIndex = 0; // 0-indexed
+        this.activeRoundConfig = null; // { templateId, goal, target }
+        this.timerDuration = 20;
+        this.timerRemaining = 20;
+        this.timerInterval = null;
+        this.isPaused = false;
+        this.soundEnabled = false;
+
+        // Spin State
+        this.gameStarted = false;
+        this.classroomAwaitingStart = false;
+        this.spunDigits = [];
+        this.currentDigit = null;
+        this.isSpinning = false;
+        this.wheelRotation = 0;
+        this.roundFinished = false;
+        this.optimalRevealed = false;
+        this.verifiedClaims = [];
+
+        // Online / Solo Player State
+        this.roomCode = null;
+        this.myPeerId = null;
+        this.myPlayerName = 'Player';
+        this.isHost = false;
+        this.mqttClient = null;
+        this.inviteCode = null;
+        this.joinTimeout = null;
+        this.joinConfirmed = false;
+
+        this.mySlots = [];
+        this.myLockedMask = [];
+        this.playersMap = {};
+      }
+
+      init() {
+        try {
+          const room = (new URLSearchParams(window.location.search).get('room') || '').trim();
+          if (/^\d{4}$/.test(room)) this.inviteCode = room;
+        } catch (e) {}
+
+        ['inputPlayerName', 'inputRoomCode'].forEach(id => {
+          document.getElementById(id).addEventListener('keydown', e => {
+            if (e.key === 'Enter') this.connectAsPlayer();
+          });
+        });
+
+        document.getElementById('claimFinalValueInput').addEventListener('keydown', e => {
+          if (e.key === 'Enter') this.verifyStudentClaim();
+        });
+
+        this.renderRoundPlanner();
+        this.showLanding();
+      }
+
+      /* =========================================================
+         ROUND PLANNER & SURPRISE ME LOGIC
+         ========================================================= */
+      ensureRoundPlansLength(count) {
+        const defaults = [
+          { templateId: 'sub_3_2', goal: 'MAX', target: 450 },
+          { templateId: 'sub_3_2', goal: 'MIN', target: 450 },
+          { templateId: 'mul_2_1', goal: 'TARGET', target: 250 },
+          { templateId: 'frac_add', goal: 'MAX', target: 1.5 },
+          { templateId: 'dec_sub', goal: 'TARGET', target: 35 },
+          { templateId: 'frac_sub', goal: 'MIN', target: 0.5 },
+          { templateId: 'brk_sub_mul', goal: 'MAX', target: 150 },
+          { templateId: 'mixed_add', goal: 'TARGET', target: 5 }
+        ];
+        while (this.roundPlans.length < count) {
+          const idx = this.roundPlans.length;
+          this.roundPlans.push({ ...defaults[idx % defaults.length] });
+        }
+      }
+
+      setPlannedRoundCount(val) {
+        this.plannedRoundCount = Math.max(1, Math.min(8, parseInt(val, 10) || 4));
+        this.ensureRoundPlansLength(this.plannedRoundCount);
+        this.renderRoundPlanner();
+      }
+
+      updateRoundPlan(idx, field, value) {
+        this.ensureRoundPlansLength(idx + 1);
+        const plan = this.roundPlans[idx];
+        if (field === 'templateId') {
+          plan.templateId = value;
+          if (value !== 'SURPRISE' && TEMPLATES[value]) {
+            plan.target = TEMPLATES[value].defaultTarget;
+          }
+        } else if (field === 'goal') {
+          plan.goal = value;
+          if (value === 'TARGET') {
+            const tpl = TEMPLATES[plan.templateId] || TEMPLATES.sub_3_2;
+            plan.target = tpl.defaultTarget;
+          }
+        } else if (field === 'target') {
+          const num = parseFloat(value);
+          if (!Number.isNaN(num)) plan.target = num;
+        }
+        this.renderRoundPlanner();
+      }
+
+      suggestTargetForPlan(idx) {
+        const plan = this.roundPlans[idx];
+        if (!plan) return;
+        const tpl = TEMPLATES[plan.templateId] || TEMPLATES.sub_3_2;
+        const opts = tpl.targetOptions;
+        plan.target = opts[Math.floor(Math.random() * opts.length)];
+        this.renderRoundPlanner();
+      }
+
+      randomizeAllRounds() {
+        const goals = ['MAX', 'MIN', 'TARGET'];
+        this.ensureRoundPlansLength(this.plannedRoundCount);
+        for (let i = 0; i < this.plannedRoundCount; i++) {
+          const randTplKey = TEMPLATE_KEYS[Math.floor(Math.random() * TEMPLATE_KEYS.length)];
+          const tpl = TEMPLATES[randTplKey];
+          const randGoal = goals[i % goals.length === 2 ? 2 : Math.floor(Math.random() * goals.length)];
+          const randTarget = tpl.targetOptions[Math.floor(Math.random() * tpl.targetOptions.length)];
+          this.roundPlans[i] = {
+            templateId: randTplKey,
+            goal: randGoal,
+            target: randTarget
+          };
+        }
+        this.renderRoundPlanner();
+      }
+
+      resolveRoundConfig(roundIndex) {
+        const goals = ['MAX', 'MIN', 'TARGET'];
+        const raw = roundIndex < this.plannedRoundCount
+          ? this.roundPlans[roundIndex]
+          : { templateId: 'SURPRISE', goal: 'SURPRISE', target: null };
+
+        const templateId = (raw.templateId === 'SURPRISE' || !TEMPLATES[raw.templateId])
+          ? TEMPLATE_KEYS[Math.floor(Math.random() * TEMPLATE_KEYS.length)]
+          : raw.templateId;
+
+        const tpl = TEMPLATES[templateId];
+        const goal = (raw.goal === 'SURPRISE' || !goals.includes(raw.goal))
+          ? goals[Math.floor(Math.random() * goals.length)]
+          : raw.goal;
+
+        let target = raw.target;
+        if (goal === 'TARGET') {
+          if (raw.templateId === 'SURPRISE' || raw.goal === 'SURPRISE' || target === null || Number.isNaN(target)) {
+            target = tpl.targetOptions[Math.floor(Math.random() * tpl.targetOptions.length)];
+          }
+        }
+
+        return { templateId, goal, target };
+      }
+
+      renderRoundPlanner() {
+        const container = document.getElementById('roundPlannerRows');
+        if (!container) return;
+        this.ensureRoundPlansLength(this.plannedRoundCount);
+
+        const templateOptionsHtml = (selected) => {
+          let html = `<option value="SURPRISE" ${selected === 'SURPRISE' ? 'selected' : ''}>🎲 Surprise Me (Random Expression)</option>`;
+          const categories = ['Whole Numbers', 'Multiplication', 'Fractions', 'Decimals & BIDMAS'];
+          categories.forEach(cat => {
+            html += `<optgroup label="${esc(cat)}">`;
+            Object.values(TEMPLATES).filter(t => t.category === cat).forEach(t => {
+              html += `<option value="${t.id}" ${selected === t.id ? 'selected' : ''}>${esc(t.name)} (${t.slots} digits)</option>`;
+            });
+            html += `</optgroup>`;
+          });
+          return html;
+        };
+
+        let rowsHtml = '';
+        for (let i = 0; i < this.plannedRoundCount; i++) {
+          const p = this.roundPlans[i];
+          const isTarget = p.goal === 'TARGET';
+          rowsHtml += `
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-col md:flex-row md:items-center gap-2.5">
+              <div class="flex items-center gap-2 md:w-28 shrink-0">
+                <span class="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 font-mono font-black text-xs flex items-center justify-center">
+                  R${i + 1}
+                </span>
+                <span class="text-xs font-extrabold text-white">Round ${i + 1}</span>
+              </div>
+
+              <div class="flex-1 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                <div class="${isTarget ? 'sm:col-span-5' : 'sm:col-span-7'}">
+                  <select aria-label="Round ${i + 1} Expression" onchange="app.updateRoundPlan(${i}, 'templateId', this.value)"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-indigo-500">
+                    ${templateOptionsHtml(p.templateId)}
+                  </select>
+                </div>
+
+                <div class="${isTarget ? 'sm:col-span-4' : 'sm:col-span-5'}">
+                  <select aria-label="Round ${i + 1} Goal" onchange="app.updateRoundPlan(${i}, 'goal', this.value)"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-2 text-xs font-bold text-amber-300 focus:outline-none focus:border-indigo-500">
+                    <option value="MAX" ${p.goal === 'MAX' ? 'selected' : ''}>📈 Largest Result</option>
+                    <option value="MIN" ${p.goal === 'MIN' ? 'selected' : ''}>📉 Smallest Result</option>
+                    <option value="TARGET" ${p.goal === 'TARGET' ? 'selected' : ''}>🎯 Closest to Target</option>
+                    <option value="SURPRISE" ${p.goal === 'SURPRISE' ? 'selected' : ''}>🎲 Surprise Me</option>
+                  </select>
+                </div>
+
+                ${isTarget ? `
+                  <div class="sm:col-span-3 flex items-center gap-1">
+                    <input type="number" step="any" value="${p.target}" oninput="app.updateRoundPlan(${i}, 'target', this.value)"
+                      title="Target Number for Round ${i + 1}"
+                      class="w-full bg-slate-900 border border-amber-500/40 rounded-lg px-2.5 py-1.5 text-xs font-mono font-black text-amber-400 focus:outline-none focus:border-amber-400">
+                    <button type="button" onclick="app.suggestTargetForPlan(${i})" title="Suggest suitable target"
+                      class="shrink-0 px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs border border-slate-700">
+                      <i class="fa-solid fa-shuffle"></i>
+                    </button>
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          `;
+        }
+        container.innerHTML = rowsHtml;
+      }
+
+      /* Active Round Helpers */
+      tpl() {
+        const id = this.activeRoundConfig ? this.activeRoundConfig.templateId : 'sub_3_2';
+        return TEMPLATES[id] || TEMPLATES.sub_3_2;
+      }
+
+      goal() {
+        return this.activeRoundConfig ? this.activeRoundConfig.goal : 'MAX';
+      }
+
+      targetNumber() {
+        return this.activeRoundConfig ? this.activeRoundConfig.target : 450;
+      }
+
+      goalDescription() {
+        const g = this.goal();
+        if (g === 'MAX') return 'Largest Possible Result';
+        if (g === 'MIN') return 'Smallest Possible Result';
+        return `Closest to ${this.formatPlainNum(this.targetNumber())}`;
+      }
+
+      formatPlainNum(n) {
+        if (n === null || n === undefined || Number.isNaN(n)) return '—';
+        const rounded = Math.round(n * 10000) / 10000;
+        return rounded.toLocaleString('en-US', { maximumFractionDigits: 4 });
+      }
+
+      scoreDistance(val) {
+        if (val === null || val === undefined || Number.isNaN(val)) return Infinity;
+        const g = this.goal();
+        if (g === 'MAX') return -val;
+        if (g === 'MIN') return val;
+        return Math.abs(val - this.targetNumber());
+      }
+
+      /* Enumerate all valid permutations of spunDigits and solve optimal + exact claim matching */
+      enumeratePermutations(digitsArray) {
+        const template = this.tpl();
+        const k = template.slots;
+        if (!digitsArray || digitsArray.length < k) return [];
+        const pool = digitsArray.slice(0, k);
+
+        const validResults = [];
+        const used = Array(k).fill(false);
+        const perm = Array(k).fill(0);
+
+        const dfs = (depth) => {
+          if (depth === k) {
+            const val = template.evalDigits(perm);
+            if (val !== null && Number.isFinite(val)) {
+              validResults.push({
+                digits: [...perm],
+                value: val,
+                formatted: template.formatFilled(perm),
+                displayValue: template.formatValue(val, perm),
+                score: this.scoreDistance(val)
+              });
+            }
+            return;
+          }
+          const seenAtDepth = new Set();
+          for (let i = 0; i < k; i++) {
+            if (used[i] || seenAtDepth.has(pool[i])) continue;
+            seenAtDepth.add(pool[i]);
+            used[i] = true;
+            perm[depth] = pool[i];
+            dfs(depth + 1);
+            used[i] = false;
+          }
+        };
+
+        dfs(0);
+        return validResults;
+      }
+
+      solveOptimal(digitsArray) {
+        const all = this.enumeratePermutations(digitsArray);
+        if (all.length === 0) return null;
+        all.sort((a, b) => a.score - b.score);
+        const best = all[0];
+        return {
+          ...best,
+          distance: this.goal() === 'TARGET' ? Math.abs(best.value - this.targetNumber()) : null
+        };
+      }
+
+      /* =========================================================
+         RENDER EXPRESSION DIAGRAMS (SUPPORTS STACKED FRACTIONS!)
+         ========================================================= */
+      renderStaticTemplateHTML(size = 'lg') {
+        const boxCls = size === 'lg'
+          ? 'w-14 h-16 sm:w-16 sm:h-20 rounded-2xl bg-slate-900 border-2 border-dashed border-indigo-400/70 flex items-center justify-center text-2xl sm:text-3xl font-mono font-black text-slate-600'
+          : 'w-9 h-11 rounded-xl bg-slate-900 border-2 border-indigo-500/40 flex items-center justify-center text-base font-mono font-black text-slate-500';
+        const fracBoxCls = size === 'lg'
+          ? 'w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-slate-900 border-2 border-dashed border-indigo-400/70 flex items-center justify-center text-xl sm:text-2xl font-mono font-black text-slate-600'
+          : 'w-8 h-8 rounded-lg bg-slate-900 border-2 border-indigo-500/40 flex items-center justify-center text-sm font-mono font-black text-slate-500';
+        const barCls = size === 'lg' ? 'w-16 sm:w-20 h-1 bg-amber-400 rounded-full my-1.5' : 'w-10 h-0.5 bg-amber-400 rounded-full my-1';
+        const opCls = size === 'lg'
+          ? 'text-3xl sm:text-4xl font-black text-amber-400 px-1'
+          : 'text-xl font-black text-amber-400 px-0.5';
+
+        return this.tpl().tokens.map(tok => {
+          if (typeof tok === 'number') {
+            return `<div class="${boxCls}">?</div>`;
+          }
+          if (tok && typeof tok === 'object' && tok.type === 'frac') {
+            return `
+              <div class="inline-flex flex-col items-center">
+                <div class="${fracBoxCls}">?</div>
+                <div class="${barCls}"></div>
+                <div class="${fracBoxCls}">?</div>
+              </div>
+            `;
+          }
+          return `<span class="${opCls}">${esc(tok)}</span>`;
+        }).join('');
+      }
+
+      /* =========================================================
+         SPINNER SVG & GUARANTEED FIRST-SPIN ANIMATION
+         ========================================================= */
+      buildWheelSVG(wheelId) {
+        const colors = [
+          '#4f46e5', '#0284c7', '#0d9488', '#059669', '#65a30d',
+          '#d97706', '#ea580c', '#e11d48', '#c026d3', '#7c3aed'
+        ];
+        const cx = 150, cy = 150, r = 136;
+        let wedges = '';
+        for (let i = 0; i < 10; i++) {
+          const startDeg = i * 36 - 90 - 18;
+          const endDeg = startDeg + 36;
+          const startRad = (startDeg * Math.PI) / 180;
+          const endRad = (endDeg * Math.PI) / 180;
+          const x1 = cx + r * Math.cos(startRad);
+          const y1 = cy + r * Math.sin(startRad);
+          const x2 = cx + r * Math.cos(endRad);
+          const y2 = cy + r * Math.sin(endRad);
+
+          const midDeg = i * 36 - 90;
+          const midRad = (midDeg * Math.PI) / 180;
+          const tx = cx + (r * 0.68) * Math.cos(midRad);
+          const ty = cy + (r * 0.68) * Math.sin(midRad);
+
+          wedges += `
+            <path d="M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 0 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z"
+                  fill="${colors[i]}" stroke="#0f172a" stroke-width="2.5"></path>
+            <text x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" fill="#ffffff" font-family="JetBrains Mono, monospace"
+                  font-weight="800" font-size="26" text-anchor="middle" dominant-baseline="central"
+                  transform="rotate(${i * 36}, ${tx.toFixed(2)}, ${ty.toFixed(2)})">${i}</text>
+          `;
+        }
+
+        return `
+          <div class="relative w-full h-full flex items-center justify-center">
+            <div class="absolute -top-2.5 left-1/2 -translate-x-1/2 z-20 drop-shadow-lg">
+              <div class="w-0 h-0 border-l-[14px] border-l-transparent border-r-[14px] border-r-transparent border-t-[24px] border-t-amber-400"></div>
+            </div>
+            <svg viewBox="0 0 300 300" class="w-full h-full drop-shadow-2xl">
+              <circle cx="150" cy="150" r="144" fill="#1e293b" stroke="#475569" stroke-width="4"></circle>
+              <g id="${wheelId}" class="spinner-wheel" style="transform-origin: 150px 150px; transform: rotate(${this.wheelRotation}deg);">
+                ${wedges}
+              </g>
+              <circle cx="150" cy="150" r="24" fill="#0f172a" stroke="#fbbf24" stroke-width="4"></circle>
+              <circle cx="150" cy="150" r="8" fill="#fbbf24"></circle>
+            </svg>
+          </div>
+        `;
+      }
+
+      animateWheelToDigit(wheelId, digit, onDone) {
+        const targetMod = (360 - (digit * 36)) % 360;
+        const currentMod = ((this.wheelRotation % 360) + 360) % 360;
+        let delta = (targetMod - currentMod + 360) % 360;
+        if (delta < 90) delta += 360;
+        const extraSpins = 3 * 360;
+        this.wheelRotation += extraSpins + delta;
+
+        // Double requestAnimationFrame ensures the browser paints the initial wheel rotation
+        // before applying the target rotation, guaranteeing Spin #1 always animates smoothly!
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const wheel = document.getElementById(wheelId);
+            if (wheel) {
+              wheel.style.transform = `rotate(${this.wheelRotation}deg)`;
+            }
+          });
+        });
+
+        let tickStep = 0;
+        const tickInterval = setInterval(() => {
+          tickStep++;
+          sound.playTick(440 + (tickStep % 5) * 40);
+          if (tickStep >= 14) clearInterval(tickInterval);
+        }, 140);
+
+        const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        setTimeout(() => {
+          clearInterval(tickInterval);
+          sound.playChime();
+          if (onDone) onDone();
+        }, reduced ? 220 : 2450);
+      }
+
+      /* =========================================================
+         NAVIGATION & GLOBAL SETTINGS
+         ========================================================= */
+      updateTimerSetting(val) {
+        this.timerDuration = parseInt(val, 10);
+      }
+
+      setSoundEnabled(on, broadcast = true) {
+        this.soundEnabled = !!on;
+        sound.muted = !this.soundEnabled;
+        this.updateSoundUI();
+        if (broadcast && this.mode === 'HOST') {
+          this.broadcastToAll({ type: 'SOUND_SETTING', soundEnabled: this.soundEnabled });
+        }
+      }
+
+      toggleSound() {
+        this.setSoundEnabled(!this.soundEnabled);
+      }
+
+      updateSoundUI() {
+        const canControl = this.mode === 'HOST' || this.mode === 'OFFLINE' || this.mode === 'CLASSROOM';
+        const btn = document.getElementById('muteBtn');
+        if (btn) btn.classList.toggle('hidden', !canControl);
+        document.getElementById('muteIcon').className = this.soundEnabled ? 'fa-solid fa-volume-high text-indigo-400' : 'fa-solid fa-volume-xmark text-slate-500';
+        document.getElementById('muteText').textContent = this.soundEnabled ? 'Sound on' : 'Sound off';
+        const cb = document.getElementById('inputSoundEnabled');
+        if (cb) cb.checked = this.soundEnabled;
+      }
+
+      hideAllViews() {
+        ['viewLanding', 'viewJoinForm', 'viewLobby', 'viewClassroomHost', 'viewGameplay'].forEach(id => {
+          document.getElementById(id).classList.add('hidden');
+        });
+      }
+
+      cleanupNetwork() {
+        clearTimeout(this.joinTimeout);
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        this.timerInterval = null;
+        if (this.mqttClient) {
+          try { this.mqttClient.end(); } catch (e) {}
+        }
+        this.mqttClient = null;
+        this.gameStarted = false;
+        this.classroomAwaitingStart = false;
+        this.joinConfirmed = false;
+        this.isPaused = false;
+        this.isSpinning = false;
+        this.roundFinished = false;
+        this.optimalRevealed = false;
+      }
+
+      updateStatus(text, dotClass) {
+        document.getElementById('statusText').textContent = text;
+        document.getElementById('statusDot').className = `w-2.5 h-2.5 rounded-full ${dotClass}`;
+      }
+
+      showLanding() {
+        this.cleanupNetwork();
+        this.mode = 'IDLE';
+        this.isHost = false;
+        document.getElementById('modalCheckClaim').classList.add('hidden');
+        document.getElementById('modalPrintSheets').classList.add('hidden');
+        document.getElementById('resultsModal').classList.add('hidden');
+        this.hideAllViews();
+        this.updateSoundUI();
+        this.updateStatus('Ready', 'bg-slate-500');
+
+        if (this.inviteCode) {
+          this.showJoinForm();
+          return;
+        }
+        document.getElementById('viewLanding').classList.remove('hidden');
+      }
+
+      /* =========================================================
+         MODE A: CLASSROOM PROJECTOR (OFF-SCREEN SCRAP PAPER MODE)
+         ========================================================= */
+      startClassroomHost() {
+        this.cleanupNetwork();
+        this.mode = 'CLASSROOM';
+        this.isHost = true;
+        this.gameStarted = true;
+        this.currentRoundIndex = 0;
+        this.setSoundEnabled(document.getElementById('inputSoundEnabled').checked, false);
+
+        this.hideAllViews();
+        document.getElementById('viewClassroomHost').classList.remove('hidden');
+        this.updateStatus('Classroom Projector Active', 'bg-amber-500');
+
+        this.loadClassroomRound(0);
+      }
+
+      loadClassroomRound(roundIdx) {
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        this.timerInterval = null;
+        this.currentRoundIndex = roundIdx;
+        this.activeRoundConfig = this.resolveRoundConfig(roundIdx);
+        this.classroomAwaitingStart = true;
+        this.spunDigits = [];
+        this.currentDigit = null;
+        this.isSpinning = false;
+        this.roundFinished = false;
+        this.optimalRevealed = false;
+        this.verifiedClaims = [];
+
+        document.getElementById('classroomOptimalDrawer').classList.add('hidden');
+        document.getElementById('classroomSpinBtn').classList.remove('hidden');
+        document.getElementById('classroomRevealBestBtn').classList.add('hidden');
+        document.getElementById('classroomNextRoundStageBtn').classList.add('hidden');
+
+        this.updateClassroomHeader();
+        this.applyClassroomStageUI();
+      }
+
+      replayClassroomCurrentRound() {
+        if (this.mode !== 'CLASSROOM') return;
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        this.timerInterval = null;
+        this.classroomAwaitingStart = true;
+        this.spunDigits = [];
+        this.currentDigit = null;
+        this.isSpinning = false;
+        this.roundFinished = false;
+        this.optimalRevealed = false;
+        this.verifiedClaims = [];
+
+        document.getElementById('classroomOptimalDrawer').classList.add('hidden');
+        document.getElementById('classroomSpinBtn').classList.remove('hidden');
+        document.getElementById('classroomRevealBestBtn').classList.add('hidden');
+        document.getElementById('classroomNextRoundStageBtn').classList.add('hidden');
+
+        this.updateClassroomHeader();
+        this.applyClassroomStageUI();
+      }
+
+      advanceClassroomNextRound() {
+        if (this.mode !== 'CLASSROOM') return;
+        this.loadClassroomRound(this.currentRoundIndex + 1);
+      }
+
+      updateClassroomHeader() {
+        const roundNum = this.currentRoundIndex + 1;
+        const planTag = roundNum <= this.plannedRoundCount ? `Round ${roundNum} of ${this.plannedRoundCount}` : `Bonus Round ${roundNum}`;
+        const goalText = this.goalDescription();
+
+        document.getElementById('classroomRoundSubLabel').textContent = `${planTag} • Classroom Projector`;
+        document.getElementById('classroomGoalHeader').textContent = `${this.tpl().name} • Goal: ${goalText}`;
+        document.getElementById('classroomGoalPill').textContent = `Aim: ${goalText}`;
+        document.getElementById('readyRoundHeading').textContent = `Round ${roundNum}: Draw This Template`;
+        document.getElementById('readySlotCount').textContent = this.tpl().slots;
+        document.getElementById('classroomTemplateDiagram').innerHTML = this.renderStaticTemplateHTML('lg');
+        document.getElementById('classroomMiniTemplate').innerHTML = this.renderStaticTemplateHTML('sm');
+
+        const tipEl = document.getElementById('readyFractionTip');
+        if (this.tpl().isFraction) {
+          tipEl.innerHTML = 'Once you write a digit in a box, it cannot be moved! <strong>Note:</strong> Denominators cannot be <code class="text-amber-300 font-mono">0</code>.';
+        } else {
+          tipEl.innerHTML = 'Once you write a digit in a box, it cannot be moved! Leading zeros (like <code class="text-slate-200 font-mono">045</code> = <code class="text-slate-200 font-mono">45</code>) are allowed.';
+        }
+
+        this.renderClassroomHistory();
+      }
+
+      applyClassroomStageUI() {
+        const waiting = this.classroomAwaitingStart;
+        const roundNum = this.currentRoundIndex + 1;
+        document.getElementById('classroomReadyPanel').classList.toggle('hidden', !waiting);
+        document.getElementById('classroomLiveStage').classList.toggle('hidden', waiting);
+        document.getElementById('classroomTimerWrap').classList.toggle('hidden', waiting || this.timerDuration === 0 || this.roundFinished);
+        document.getElementById('classroomTimerBarWrap').classList.toggle('hidden', waiting || this.timerDuration === 0 || this.roundFinished);
+        document.getElementById('classroomPhaseBadge').textContent = waiting
+          ? `ROUND ${roundNum} — PREPARE YOUR PAPER`
+          : this.roundFinished
+            ? `ROUND ${roundNum} COMPLETE — CHECK CLAIMS`
+            : `ROUND ${roundNum} • SPIN #${this.spunDigits.length} OF ${this.tpl().slots}`;
+      }
+
+      classroomBeginGame() {
+        if (this.mode !== 'CLASSROOM' || !this.classroomAwaitingStart) return;
+        this.classroomAwaitingStart = false;
+        document.getElementById('classroomWheelMount').innerHTML = this.buildWheelSVG('classroomWheelGroup');
+        this.applyClassroomStageUI();
+        this.hostTriggerSpin();
+      }
+
+      hostTriggerSpin() {
+        if (this.isSpinning || this.roundFinished) return;
+        if (this.mode === 'CLASSROOM' && this.classroomAwaitingStart) return;
+
+        const maxSlots = this.tpl().slots;
+        if (this.spunDigits.length >= maxSlots) {
+          this.completeRound();
+          return;
+        }
+
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        this.isSpinning = true;
+        const nextDigit = Math.floor(Math.random() * 10);
+
+        if (this.mode === 'CLASSROOM') {
+          const spinNum = this.spunDigits.length + 1;
+          const roundNum = this.currentRoundIndex + 1;
+          const btn = document.getElementById('classroomSpinBtn');
+          btn.disabled = true;
+          btn.classList.add('opacity-50', 'cursor-not-allowed');
+          document.getElementById('classroomCurrentDigit').textContent = '…';
+          document.getElementById('classroomSpinSubtitle').textContent = `Spinning #${spinNum} of ${maxSlots}...`;
+          document.getElementById('classroomActionHeadline').textContent = 'Watch the spinner!';
+          document.getElementById('classroomActionSub').textContent = 'Get ready to choose an empty box.';
+
+          this.animateWheelToDigit('classroomWheelGroup', nextDigit, () => {
+            this.isSpinning = false;
+            this.currentDigit = nextDigit;
+            this.spunDigits.push(nextDigit);
+
+            document.getElementById('classroomCurrentDigit').textContent = nextDigit;
+            document.getElementById('classroomSpinSubtitle').textContent = `Spin #${this.spunDigits.length} of ${maxSlots}`;
+            document.getElementById('classroomPhaseBadge').textContent = `ROUND ${roundNum} • SPIN #${this.spunDigits.length} OF ${maxSlots}`;
+
+            const isFinal = this.spunDigits.length >= maxSlots;
+            document.getElementById('classroomActionHeadline').textContent = isFinal
+              ? `Final digit is ${nextDigit}! Fill your last box & calculate!`
+              : `Digit ${nextDigit} — write it in one empty box!`;
+            document.getElementById('classroomActionSub').textContent = isFinal
+              ? 'Calculate your expression value, then call out your result!'
+              : 'Once written on paper, it is locked in place.';
+
+            btn.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            document.getElementById('classroomSpinBtnText').textContent = isFinal
+              ? 'FINISH & REVEAL RESULTS'
+              : `SPIN DIGIT #${this.spunDigits.length + 1}`;
+
+            this.renderClassroomHistory();
+            this.startSpinTimer();
+          });
+          return;
+        }
+
+        // Online Host or Solo Practice Spin
+        this.lockPreviousOnlineSlot();
+        this.broadcastToAll({
+          type: 'SPIN_STARTED',
+          spinIndex: this.spunDigits.length + 1,
+          digit: nextDigit,
+          timerDuration: this.timerDuration
+        });
+
+        this.executeOnlineSpinAnimation(nextDigit);
+      }
+
+      renderClassroomHistory() {
+        const list = document.getElementById('classroomHistoryList');
+        const maxSlots = this.tpl().slots;
+        document.getElementById('classroomSpinCountLabel').textContent = `${this.spunDigits.length} / ${maxSlots}`;
+
+        if (this.spunDigits.length === 0) {
+          list.innerHTML = '<span class="text-xs text-slate-500 italic">No digits spun yet. Click "Everyone Ready — Spin #1" to start!</span>';
+          return;
+        }
+
+        list.innerHTML = this.spunDigits.map((d, idx) => `
+          <div class="shrink-0 bg-slate-950 border ${idx === this.spunDigits.length - 1 ? 'border-amber-400 ring-2 ring-amber-400/30' : 'border-slate-800'} px-4 py-2 rounded-xl text-center shadow">
+            <span class="text-[10px] font-bold text-slate-400 block">Spin #${idx + 1}</span>
+            <span class="text-xl font-black font-mono text-white">${d}</span>
+          </div>
+        `).join('');
+      }
+
+      startSpinTimer() {
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        if (this.timerDuration <= 0) {
+          this.updateTimerUI(0, true);
+          return;
+        }
+
+        this.timerRemaining = this.timerDuration;
+        this.updateTimerUI(this.timerRemaining, false);
+
+        this.timerInterval = setInterval(() => {
+          if (this.isPaused || this.isSpinning || this.roundFinished) return;
+          this.timerRemaining--;
+          this.updateTimerUI(this.timerRemaining, false);
+
+          if (this.timerRemaining <= 0) {
+            clearInterval(this.timerInterval);
+            this.timerInterval = null;
+            if (this.isHost) {
+              if (this.spunDigits.length >= this.tpl().slots) {
+                this.completeRound();
+              } else {
+                this.hostTriggerSpin();
+              }
+            }
+          }
+        }, 1000);
+      }
+
+      updateTimerUI(sec, manual) {
+        const pct = manual ? 100 : Math.max(0, (sec / this.timerDuration) * 100);
+        const label = manual ? 'Manual' : `${sec}s`;
+        if (this.mode === 'CLASSROOM') {
+          document.getElementById('classroomTimerText').textContent = label;
+          document.getElementById('classroomTimerProgressBar').style.width = `${pct}%`;
+        } else {
+          document.getElementById('timerSeconds').textContent = label;
+          document.getElementById('timerProgressBar').style.width = `${pct}%`;
+        }
+      }
+
+      togglePauseGame() {
+        this.isPaused = !this.isPaused;
+        const cls = this.isPaused ? 'fa-solid fa-play text-emerald-400' : 'fa-solid fa-pause';
+        const i1 = document.getElementById('pauseIcon');
+        const i2 = document.getElementById('classroomPauseIcon');
+        if (i1) i1.className = cls;
+        if (i2) i2.className = cls;
+      }
+
+      completeRound() {
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        this.timerInterval = null;
+        this.roundFinished = true;
+
+        if (this.mode === 'CLASSROOM') {
+          sound.playFanfare();
+          this.applyClassroomStageUI();
+          document.getElementById('classroomActionHeadline').textContent = 'Round Complete! Who got the best result?';
+          document.getElementById('classroomActionSub').textContent = 'Click "Check Student\'s Claim" to validate a student\'s final answer, or reveal the optimal solution.';
+          document.getElementById('classroomSpinBtn').classList.add('hidden');
+          document.getElementById('classroomRevealBestBtn').classList.remove('hidden');
+          document.getElementById('classroomNextRoundStageBtn').classList.remove('hidden');
+          if (typeof confetti === 'function') {
+            confetti({ particleCount: 90, spread: 70, origin: { y: 0.6 } });
+          }
+          return;
+        }
+
+        // Online / Solo Mode
+        this.autoFillMissingOnlineSlots();
+        this.lockPreviousOnlineSlot();
+        this.renderOnlineExpressionBoard();
+
+        if (this.mode === 'OFFLINE') {
+          this.finalizeAISlots();
+        }
+
+        if (this.isHost) {
+          this.broadcastToAll({
+            type: 'ROUND_FINISHED',
+            spunDigits: this.spunDigits
+          });
+          setTimeout(() => this.showOnlineResultsModal(), 500);
+        }
+      }
+
+      toggleOptimalReveal() {
+        const drawer = document.getElementById('classroomOptimalDrawer');
+        this.optimalRevealed = !this.optimalRevealed;
+        if (!this.optimalRevealed) {
+          drawer.classList.add('hidden');
+          return;
+        }
+
+        const opt = this.solveOptimal(this.spunDigits);
+        if (!opt) {
+          document.getElementById('classroomOptimalContent').innerHTML = `
+            <div class="text-sm font-bold text-rose-300">No valid non-zero denominator arrangement exists for these spun digits.</div>
+          `;
+          drawer.classList.remove('hidden');
+          return;
+        }
+
+        const distText = opt.distance !== null
+          ? `<span class="text-xs text-emerald-300 block">Distance from ${this.formatPlainNum(this.targetNumber())}: <strong>${this.formatPlainNum(opt.distance)}</strong></span>`
+          : '';
+
+        document.getElementById('classroomOptimalContent').innerHTML = `
+          <div class="font-mono text-2xl sm:text-3xl font-black text-white tracking-wide">
+            ${esc(opt.formatted)}
+          </div>
+          <div class="text-left sm:text-right">
+            <span class="text-xs uppercase font-bold text-emerald-300 block">Optimal Value</span>
+            <span class="text-xl sm:text-2xl font-black font-mono text-amber-400">${esc(opt.displayValue)}</span>
+            ${distText}
+          </div>
+        `;
+        drawer.classList.remove('hidden');
+      }
+
+      /* =========================================================
+         CLAIM VALIDATION BY FINAL RESULT ONLY
+         ========================================================= */
+      openCheckClaimModal() {
+        this.wasPausedBeforeCheck = this.isPaused;
+        this.isPaused = true;
+
+        const poolEl = document.getElementById('claimSpunReference');
+        if (this.spunDigits.length === 0) {
+          poolEl.innerHTML = '<span class="text-xs text-slate-500 italic">No digits spun yet</span>';
+        } else {
+          poolEl.innerHTML = this.spunDigits.map(d =>
+            `<span class="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-500/40 text-indigo-200 font-bold text-sm">${d}</span>`
+          ).join('');
+        }
+
+        document.getElementById('claimFinalValueInput').value = '';
+        document.getElementById('claimStudentName').value = '';
+        const out = document.getElementById('claimResultOutput');
+        out.className = 'hidden';
+        out.innerHTML = '';
+
+        this.renderVerifiedClaimsList();
+        document.getElementById('modalCheckClaim').classList.remove('hidden');
+        document.getElementById('claimFinalValueInput').focus();
+      }
+
+      closeCheckClaimModal() {
+        document.getElementById('modalCheckClaim').classList.add('hidden');
+        if (this.wasPausedBeforeCheck !== undefined) {
+          this.isPaused = this.wasPausedBeforeCheck;
+        }
+      }
+
+      verifyStudentClaim() {
+        const maxSlots = this.tpl().slots;
+        const output = document.getElementById('claimResultOutput');
+        output.classList.remove('hidden');
+
+        if (this.spunDigits.length < maxSlots) {
+          sound.playBuzz();
+          output.className = 'rounded-2xl p-4 space-y-2 bg-rose-950/60 border border-rose-500/40 text-rose-200';
+          output.innerHTML = `
+            <div class="font-black text-rose-400 flex items-center gap-2">
+              <i class="fa-solid fa-triangle-exclamation"></i>
+              <span>ROUND NOT FINISHED YET</span>
+            </div>
+            <p class="text-xs">Only ${this.spunDigits.length} of ${maxSlots} digits have been spun so far. Spin all ${maxSlots} digits before validating a final result.</p>
+          `;
+          return;
+        }
+
+        const rawClaim = document.getElementById('claimFinalValueInput').value;
+        const parsed = parseClaimedValue(rawClaim);
+        if (!parsed.valid) {
+          sound.playBuzz();
+          output.className = 'rounded-2xl p-4 space-y-2 bg-rose-950/60 border border-rose-500/40 text-rose-200';
+          output.innerHTML = `
+            <div class="font-black text-rose-400 flex items-center gap-2">
+              <i class="fa-solid fa-triangle-exclamation"></i>
+              <span>INVALID NUMBER FORMAT</span>
+            </div>
+            <p class="text-xs">Enter a valid whole number, decimal, fraction (e.g. <code>7/6</code>), or mixed number (e.g. <code>1 1/6</code>).</p>
+          `;
+          return;
+        }
+
+        const allValidPerms = this.enumeratePermutations(this.spunDigits);
+        const matches = allValidPerms.filter(p => Math.abs(p.value - parsed.value) <= 1e-5);
+
+        if (matches.length === 0) {
+          sound.playBuzz();
+          // Find closest achievable value to give helpful feedback
+          let closestHint = '';
+          if (allValidPerms.length > 0) {
+            const byProximity = [...allValidPerms].sort((a, b) => Math.abs(a.value - parsed.value) - Math.abs(b.value - parsed.value));
+            const nearest = byProximity[0];
+            closestHint = `<p class="text-xs text-rose-300 pt-1">Closest possible result with these digits: <strong class="text-white font-mono">${esc(nearest.displayValue)}</strong> (via <code class="text-amber-300">${esc(nearest.formatted)}</code>).</p>`;
+          }
+
+          output.className = 'rounded-2xl p-4 space-y-2 bg-rose-950/60 border border-rose-500/40 text-rose-200';
+          output.innerHTML = `
+            <div class="flex items-center space-x-2 text-rose-400 font-black text-base">
+              <i class="fa-solid fa-circle-xmark text-lg"></i>
+              <span>NOT POSSIBLE WITH SPUN DIGITS ❌</span>
+            </div>
+            <p class="text-xs text-rose-200">
+              No arrangement of <strong class="font-mono text-white">[${this.spunDigits.slice(0, maxSlots).join(', ')}]</strong> in <strong>${esc(this.tpl().name)}</strong> equals <strong class="font-mono text-amber-300">${esc(parsed.display)}</strong>.
+            </p>
+            ${closestHint}
+          `;
+          return;
+        }
+
+        // Valid achievable result!
+        const canonical = matches[0];
+        const opt = this.solveOptimal(this.spunDigits);
+        const isOptimal = opt && Math.abs(canonical.score - opt.score) <= 1e-6;
+
+        const studentName = document.getElementById('claimStudentName').value.trim() || `Student #${this.verifiedClaims.length + 1}`;
+        this.verifiedClaims.push({
+          name: studentName,
+          expr: canonical.formatted,
+          value: canonical.value,
+          displayValue: canonical.displayValue,
+          score: canonical.score,
+          isOptimal
+        });
+        this.verifiedClaims.sort((a, b) => a.score - b.score);
+        this.renderVerifiedClaimsList();
+
+        if (isOptimal) {
+          sound.playFanfare();
+          if (typeof confetti === 'function') {
+            confetti({ particleCount: 110, spread: 70, origin: { y: 0.6 } });
+          }
+        } else {
+          sound.playChime();
+        }
+
+        // Deduplicate distinct formatted expressions that yield this exact value
+        const uniqueWayStrings = Array.from(new Set(matches.map(m => m.formatted)));
+        const shownWays = uniqueWayStrings.slice(0, 4).map(w => `<code class="px-2 py-0.5 rounded bg-slate-900 border border-emerald-500/30 font-mono text-white">${esc(w)}</code>`).join(' ');
+        const extraCount = uniqueWayStrings.length > 4 ? ` <span class="text-xs text-emerald-300">+${uniqueWayStrings.length - 4} more</span>` : '';
+
+        const targetDetail = this.goal() === 'TARGET'
+          ? `<div class="text-xs text-slate-300">Distance from target (${this.formatPlainNum(this.targetNumber())}): <strong class="text-amber-300 font-mono">${this.formatPlainNum(Math.abs(canonical.value - this.targetNumber()))}</strong></div>`
+          : '';
+
+        output.className = 'rounded-2xl p-4 space-y-3 bg-emerald-950/60 border border-emerald-500/40 text-emerald-100';
+        output.innerHTML = `
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <div class="flex items-center space-x-2 text-emerald-400 font-black text-base">
+              <i class="fa-solid fa-circle-check text-lg"></i>
+              <span>${isOptimal ? 'POSSIBLE & MATHEMATICALLY OPTIMAL! 🏆' : 'VALID & POSSIBLE RESULT! ✅'}</span>
+            </div>
+            ${isOptimal ? '<span class="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[11px] font-black">BEST POSSIBLE</span>' : ''}
+          </div>
+          <div class="bg-slate-950/80 border border-emerald-500/20 rounded-xl p-3 space-y-1.5">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <span class="text-xs text-slate-400">Verified Result:</span>
+              <span class="font-mono text-xl font-black text-amber-400">${esc(canonical.displayValue)}</span>
+            </div>
+            <div class="text-xs text-slate-300 flex flex-wrap items-center gap-1.5">
+              <span>Achieved via:</span> ${shownWays}${extraCount}
+            </div>
+          </div>
+          ${targetDetail}
+          <div class="text-[11px] text-emerald-300/90">
+            Logged <strong>${esc(studentName)}</strong> to the Verified Class Claims board below.
+          </div>
+        `;
+      }
+
+      renderVerifiedClaimsList() {
+        const box = document.getElementById('classroomVerifiedBoard');
+        const list = document.getElementById('classroomVerifiedList');
+        if (this.verifiedClaims.length === 0) {
+          box.classList.add('hidden');
+          return;
+        }
+        box.classList.remove('hidden');
+        list.innerHTML = this.verifiedClaims.map((c, idx) => `
+          <div class="flex items-center justify-between text-xs bg-slate-900 border ${idx === 0 ? 'border-amber-400/50' : 'border-slate-800'} rounded-lg px-3 py-2 gap-2">
+            <div class="flex items-center gap-2 truncate">
+              <span class="font-black ${idx === 0 ? 'text-amber-400' : 'text-slate-400'}">#${idx + 1}</span>
+              <span class="font-bold text-white truncate">${esc(c.name)}</span>
+              <span class="font-mono text-slate-400 hidden sm:inline">(${esc(c.expr)})</span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              ${c.isOptimal ? '<span class="text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">OPTIMAL</span>' : ''}
+              <span class="font-mono font-black text-xs sm:text-sm text-amber-300">${esc(c.displayValue)}</span>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      clearVerifiedClaims() {
+        this.verifiedClaims = [];
+        this.renderVerifiedClaimsList();
+      }
+
+      /* =========================================================
+         MODE B & C: ONLINE MULTIPLAYER & SOLO PRACTICE
+         ========================================================= */
+      generateRoomCode() {
+        return Math.floor(1000 + Math.random() * 9000).toString();
+      }
+
+      getInviteLink() {
+        return `${window.location.href.split(/[?#]/)[0]}?room=${this.roomCode}`;
+      }
+
+      copyRoomCode() {
+        if (this.roomCode) this.copyText(this.roomCode, 'copyCodeBtn');
+      }
+
+      copyInviteLink() {
+        if (this.roomCode) this.copyText(this.getInviteLink(), 'copyLinkBtn');
+      }
+
+      copyText(text, btnId) {
+        const btn = document.getElementById(btnId);
+        const orig = btn.innerHTML;
+        const done = () => {
+          btn.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Copied!';
+          setTimeout(() => { btn.innerHTML = orig; }, 1500);
+        };
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(done, () => alert(text));
+        } else {
+          alert(text);
+        }
+      }
+
+      setupHostLobby() {
+        const hostName = document.getElementById('inputHostName').value.trim() || 'Host';
+        this.cleanupNetwork();
+        this.isHost = true;
+        this.mode = 'HOST';
+        this.currentRoundIndex = 0;
+        this.activeRoundConfig = this.resolveRoundConfig(0);
+        this.roomCode = this.generateRoomCode();
+        this.myPlayerName = hostName;
+        this.myPeerId = `host-${Math.random().toString(36).slice(2, 8)}`;
+        this.setSoundEnabled(document.getElementById('inputSoundEnabled').checked, false);
+
+        document.getElementById('lobbyRoomCode').textContent = this.roomCode;
+        document.getElementById('lobbyShareLink').textContent = this.getInviteLink();
+        document.getElementById('lobbyShareRow').classList.remove('hidden');
+        document.getElementById('lobbyRulesBadge').textContent = `Round 1: ${this.tpl().name} • ${this.goalDescription()}`;
+        document.getElementById('playerWaitingNotice').classList.add('hidden');
+        document.getElementById('hostLobbyControls').classList.remove('hidden');
+
+        this.playersMap = {};
+        this.playersMap[this.myPeerId] = {
+          name: this.myPlayerName,
+          slots: Array(this.tpl().slots).fill(null),
+          filledCount: 0
+        };
+
+        this.updateLobbyPlayerList();
+        this.hideAllViews();
+        document.getElementById('viewLobby').classList.remove('hidden');
+        this.initMqttSession();
+      }
+
+      showJoinForm() {
+        this.hideAllViews();
+        document.getElementById('viewJoinForm').classList.remove('hidden');
+        const inv = !!this.inviteCode;
+        const codeInput = document.getElementById('inputRoomCode');
+        if (inv) codeInput.value = this.inviteCode;
+        codeInput.readOnly = inv;
+        document.getElementById('joinInviteNote').classList.toggle('hidden', !inv);
+        document.getElementById('joinCloseBtn').classList.toggle('hidden', inv);
+        document.getElementById('joinCancelBtn').classList.toggle('hidden', inv);
+        if (inv) document.getElementById('inputPlayerName').focus();
+      }
+
+      connectAsPlayer() {
+        const nameInput = document.getElementById('inputPlayerName').value.trim();
+        const codeInput = document.getElementById('inputRoomCode').value.trim();
+        if (!nameInput) return alert('Please enter your name.');
+        if (!/^\d{4}$/.test(codeInput)) return alert('Please enter a valid 4-digit room code.');
+
+        this.cleanupNetwork();
+        this.isHost = false;
+        this.mode = 'PLAYER';
+        this.myPlayerName = nameInput;
+        this.roomCode = codeInput;
+        this.myPeerId = `player-${Math.random().toString(36).slice(2, 8)}`;
+        this.setSoundEnabled(false, false);
+
+        document.getElementById('lobbyRoomCode').textContent = this.roomCode;
+        document.getElementById('lobbyShareRow').classList.add('hidden');
+        document.getElementById('hostLobbyControls').classList.add('hidden');
+
+        this.playersMap = {};
+        this.playersMap[this.myPeerId] = {
+          name: this.myPlayerName,
+          slots: [],
+          filledCount: 0
+        };
+
+        this.updateLobbyPlayerList();
+        this.hideAllViews();
+        document.getElementById('viewLobby').classList.remove('hidden');
+
+        const notice = document.getElementById('playerWaitingNotice');
+        notice.className = 'bg-amber-950/40 border border-amber-500/30 rounded-xl p-4 text-center text-amber-300 text-sm font-bold';
+        notice.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-2"></i>Connecting to room ${esc(this.roomCode)}...`;
+        this.updateStatus('Connecting...', 'bg-amber-500 animate-pulse');
+
+        this.joinTimeout = setTimeout(() => {
+          if (!this.joinConfirmed && this.mode === 'PLAYER') {
+            notice.className = 'bg-rose-950/40 border border-rose-500/30 rounded-xl p-4 text-center text-rose-300 text-sm font-bold';
+            notice.innerHTML = `Could not find room ${esc(this.roomCode)}. <button onclick="app.showLanding()" class="underline ml-2">Back</button>`;
+            this.updateStatus('Connection failed', 'bg-rose-500');
+          }
+        }, 12000);
+
+        this.initMqttSession(() => {
+          this.broadcastToAll({
+            type: 'PLAYER_JOIN_REQ',
+            playerName: this.myPlayerName
+          });
+        });
+      }
+
+      initMqttSession(onReady) {
+        if (typeof mqtt === 'undefined') {
+          alert('Online networking library unavailable offline. Use Classroom Projector or Solo Practice mode.');
+          this.showLanding();
+          return;
+        }
+        this.mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+          clientId: 'dg_' + this.myPeerId + '_' + Math.random().toString(36).slice(2, 6),
+          clean: true,
+          connectTimeout: 6000,
+          keepalive: 30
+        });
+
+        this.mqttClient.on('connect', () => {
+          const topic = `digit-gridlock-v2/${this.roomCode}`;
+          this.mqttClient.subscribe(topic, { qos: 0 }, (err) => {
+            if (!err) {
+              if (this.isHost) this.updateStatus('Room Live', 'bg-emerald-500');
+              if (onReady) onReady();
+            }
+          });
+        });
+
+        this.mqttClient.on('message', (topic, payload) => {
+          try {
+            const msg = JSON.parse(payload.toString());
+            if (msg.senderId === this.myPeerId) return;
+            this.handleIncomingMessage(msg);
+          } catch (e) {}
+        });
+      }
+
+      broadcastToAll(data) {
+        data.roomCode = this.roomCode;
+        data.senderId = this.myPeerId;
+        if (this.mqttClient && this.mqttClient.connected) {
+          this.mqttClient.publish(`digit-gridlock-v2/${this.roomCode}`, JSON.stringify(data), { qos: 0 });
+        }
+      }
+
+      handleIncomingMessage(msg) {
+        if (!msg || (msg.roomCode && msg.roomCode !== this.roomCode)) return;
+
+        switch (msg.type) {
+          case 'PLAYER_JOIN_REQ':
+            if (this.isHost) {
+              this.playersMap[msg.senderId] = {
+                name: String(msg.playerName || 'Player').slice(0, 14),
+                slots: Array(this.tpl().slots).fill(null),
+                filledCount: 0
+              };
+              this.updateLobbyPlayerList();
+              this.broadcastState();
+            }
+            break;
+
+          case 'LOBBY_STATE_SYNC':
+            if (!this.isHost) {
+              if (!this.joinConfirmed) {
+                this.joinConfirmed = true;
+                clearTimeout(this.joinTimeout);
+                const notice = document.getElementById('playerWaitingNotice');
+                notice.className = 'bg-purple-950/40 border border-purple-500/30 rounded-xl p-4 text-center text-purple-200 text-sm font-bold';
+                notice.innerHTML = `<i class="fa-solid fa-check-circle text-emerald-400 mr-1.5"></i>Connected! Waiting for Host to start...`;
+                this.updateStatus('Connected to Host', 'bg-emerald-500');
+              }
+              this.currentRoundIndex = msg.currentRoundIndex || 0;
+              this.activeRoundConfig = msg.activeRoundConfig;
+              this.timerDuration = msg.timerDuration;
+              this.playersMap = msg.playersMap;
+              if (typeof msg.soundEnabled === 'boolean') this.setSoundEnabled(msg.soundEnabled, false);
+              document.getElementById('lobbyRulesBadge').textContent = `Round 1: ${this.tpl().name} • ${this.goalDescription()}`;
+              this.updateLobbyPlayerList();
+            }
+            break;
+
+          case 'SOUND_SETTING':
+            if (!this.isHost && typeof msg.soundEnabled === 'boolean') {
+              this.setSoundEnabled(msg.soundEnabled, false);
+            }
+            break;
+
+          case 'GAME_STARTED':
+            if (!this.isHost) {
+              document.getElementById('resultsModal').classList.add('hidden');
+              this.currentRoundIndex = msg.currentRoundIndex || 0;
+              this.activeRoundConfig = msg.activeRoundConfig;
+              this.timerDuration = msg.timerDuration;
+              if (typeof msg.soundEnabled === 'boolean') this.setSoundEnabled(msg.soundEnabled, false);
+              this.setupOnlineGameplayUI();
+              this.executeOnlineSpinAnimation(msg.firstDigit);
+            }
+            break;
+
+          case 'SPIN_STARTED':
+            if (!this.isHost) {
+              this.lockPreviousOnlineSlot();
+              this.timerDuration = msg.timerDuration;
+              this.executeOnlineSpinAnimation(msg.digit);
+            }
+            break;
+
+          case 'PLAYER_SLOT_UPDATE':
+            if (this.playersMap[msg.senderId]) {
+              this.playersMap[msg.senderId].slots = msg.slots;
+              this.playersMap[msg.senderId].filledCount = msg.filledCount;
+              this.renderOnlineOpponentMatrix();
+            }
+            if (this.isHost) {
+              this.broadcastToAll({
+                type: 'OPPONENT_SLOT_BROADCAST',
+                playerId: msg.senderId,
+                slots: msg.slots,
+                filledCount: msg.filledCount
+              });
+              this.checkAllPlayersPlacedCurrentSpin();
+            }
+            break;
+
+          case 'OPPONENT_SLOT_BROADCAST':
+            if (!this.isHost && msg.playerId !== this.myPeerId && this.playersMap[msg.playerId]) {
+              this.playersMap[msg.playerId].slots = msg.slots;
+              this.playersMap[msg.playerId].filledCount = msg.filledCount;
+              this.renderOnlineOpponentMatrix();
+            }
+            break;
+
+          case 'ROUND_FINISHED':
+            if (!this.isHost) {
+              this.spunDigits = msg.spunDigits || this.spunDigits;
+              this.completeRound();
+              setTimeout(() => this.showOnlineResultsModal(), 500);
+            }
+            break;
+        }
+      }
+
+      broadcastState() {
+        if (!this.isHost) return;
+        this.broadcastToAll({
+          type: 'LOBBY_STATE_SYNC',
+          currentRoundIndex: this.currentRoundIndex,
+          activeRoundConfig: this.activeRoundConfig,
+          timerDuration: this.timerDuration,
+          playersMap: this.playersMap,
+          soundEnabled: this.soundEnabled
+        });
+      }
+
+      updateLobbyPlayerList() {
+        const list = document.getElementById('lobbyPlayersList');
+        const ids = Object.keys(this.playersMap);
+        document.getElementById('connectedPlayerCount').textContent = ids.length;
+        list.innerHTML = ids.map(id => {
+          const p = this.playersMap[id];
+          const you = id === this.myPeerId ? ' (You)' : '';
+          return `
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 flex items-center space-x-3">
+              <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center font-bold text-xs text-white">
+                ${esc(p.name.charAt(0).toUpperCase())}
+              </div>
+              <div class="truncate">
+                <span class="text-xs font-bold text-white block truncate">${esc(p.name)}${you}</span>
+                <span class="text-[10px] text-emerald-400">Ready</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      startMultiplayerGame() {
+        if (!this.isHost) return;
+        this.currentRoundIndex = 0;
+        this.activeRoundConfig = this.resolveRoundConfig(0);
+        const firstDigit = Math.floor(Math.random() * 10);
+        this.setupOnlineGameplayUI();
+        this.broadcastToAll({
+          type: 'GAME_STARTED',
+          currentRoundIndex: this.currentRoundIndex,
+          activeRoundConfig: this.activeRoundConfig,
+          timerDuration: this.timerDuration,
+          soundEnabled: this.soundEnabled,
+          firstDigit
+        });
+        this.executeOnlineSpinAnimation(firstDigit);
+      }
+
+      startOfflinePractice() {
+        this.cleanupNetwork();
+        this.mode = 'OFFLINE';
+        this.isHost = true;
+        this.currentRoundIndex = 0;
+        this.activeRoundConfig = this.resolveRoundConfig(0);
+        this.roomCode = 'SOLO';
+        this.myPlayerName = document.getElementById('inputHostName').value.trim() || 'You';
+        this.myPeerId = 'SOLO_USER';
+        this.setSoundEnabled(document.getElementById('inputSoundEnabled').checked, false);
+
+        const k = this.tpl().slots;
+        this.playersMap = {
+          'SOLO_USER': { name: this.myPlayerName, slots: Array(k).fill(null), filledCount: 0 },
+          'AI_1': { name: 'PlaceBot', slots: Array(k).fill(null), filledCount: 0 },
+          'AI_2': { name: 'DigitPro', slots: Array(k).fill(null), filledCount: 0 },
+          'AI_3': { name: 'QuickCalc', slots: Array(k).fill(null), filledCount: 0 }
+        };
+
+        this.setupOnlineGameplayUI();
+        const firstDigit = Math.floor(Math.random() * 10);
+        this.executeOnlineSpinAnimation(firstDigit);
+      }
+
+      advanceOnlineNextRound() {
+        document.getElementById('resultsModal').classList.add('hidden');
+        if (!this.isHost) return;
+
+        this.currentRoundIndex++;
+        this.activeRoundConfig = this.resolveRoundConfig(this.currentRoundIndex);
+        const firstDigit = Math.floor(Math.random() * 10);
+
+        this.setupOnlineGameplayUI();
+        if (this.mode === 'HOST') {
+          this.broadcastToAll({
+            type: 'GAME_STARTED',
+            currentRoundIndex: this.currentRoundIndex,
+            activeRoundConfig: this.activeRoundConfig,
+            timerDuration: this.timerDuration,
+            soundEnabled: this.soundEnabled,
+            firstDigit
+          });
+        }
+        this.executeOnlineSpinAnimation(firstDigit);
+      }
+
+      setupOnlineGameplayUI() {
+        this.gameStarted = true;
+        this.roundFinished = false;
+        this.spunDigits = [];
+        this.currentDigit = null;
+        const k = this.tpl().slots;
+        this.mySlots = Array(k).fill(null);
+        this.myLockedMask = Array(k).fill(false);
+
+        Object.keys(this.playersMap).forEach(id => {
+          this.playersMap[id].slots = Array(k).fill(null);
+          this.playersMap[id].filledCount = 0;
+        });
+
+        this.hideAllViews();
+        document.getElementById('viewGameplay').classList.remove('hidden');
+        document.getElementById('onlineWheelMount').innerHTML = this.buildWheelSVG('onlineWheelGroup');
+        document.getElementById('onlineRoundBadge').textContent = `Round ${this.currentRoundIndex + 1}`;
+        document.getElementById('onlineGoalBadge').textContent = `Goal: ${this.goalDescription()}`;
+
+        const showHostControls = this.isHost || this.mode === 'OFFLINE';
+        document.getElementById('hostForceSpinBtn').classList.toggle('hidden', !showHostControls);
+        document.getElementById('hostPauseBtn').classList.toggle('hidden', !showHostControls);
+
+        this.renderOnlineExpressionBoard();
+        this.renderOnlineOpponentMatrix();
+        this.renderOnlineHistoryStrip();
+      }
+
+      executeOnlineSpinAnimation(digit) {
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        this.isSpinning = true;
+        const maxSlots = this.tpl().slots;
+        const spinNum = this.spunDigits.length + 1;
+
+        document.getElementById('onlineSpunDigit').textContent = '…';
+        document.getElementById('onlineSpinBadge').textContent = `Spin #${spinNum} of ${maxSlots}`;
+        document.getElementById('onlinePromptTitle').textContent = 'Spinning digit...';
+        this.renderOnlineExpressionBoard();
+
+        this.animateWheelToDigit('onlineWheelGroup', digit, () => {
+          this.isSpinning = false;
+          this.currentDigit = digit;
+          this.spunDigits.push(digit);
+
+          document.getElementById('onlineSpunDigit').textContent = digit;
+          document.getElementById('onlinePromptTitle').textContent = `Tap an open box to place ${digit}!`;
+          this.renderOnlineExpressionBoard();
+          this.renderOnlineHistoryStrip();
+
+          if (this.mode === 'OFFLINE') {
+            this.simulateAIDigitPlacement(digit);
+          }
+          this.startSpinTimer();
+        });
+      }
+
+      handleOnlineSlotClick(slotIdx) {
+        if (this.isSpinning || this.roundFinished || this.currentDigit === null) return;
+        if (this.myLockedMask[slotIdx]) return;
+
+        for (let i = 0; i < this.mySlots.length; i++) {
+          if (!this.myLockedMask[i]) {
+            this.mySlots[i] = null;
+          }
+        }
+
+        this.mySlots[slotIdx] = this.currentDigit;
+        sound.playTick(680);
+        this.renderOnlineExpressionBoard();
+
+        const filledCount = this.mySlots.filter(v => v !== null).length;
+        if (this.playersMap[this.myPeerId]) {
+          this.playersMap[this.myPeerId].slots = [...this.mySlots];
+          this.playersMap[this.myPeerId].filledCount = filledCount;
+        }
+        this.renderOnlineOpponentMatrix();
+
+        this.broadcastToAll({
+          type: 'PLAYER_SLOT_UPDATE',
+          slots: this.mySlots,
+          filledCount
+        });
+
+        if (this.isHost) {
+          this.checkAllPlayersPlacedCurrentSpin();
+        }
+      }
+
+      lockPreviousOnlineSlot() {
+        if (this.spunDigits.length === 0) return;
+        this.autoFillMissingOnlineSlots();
+        for (let i = 0; i < this.mySlots.length; i++) {
+          if (this.mySlots[i] !== null) {
+            this.myLockedMask[i] = true;
+          }
+        }
+      }
+
+      autoFillMissingOnlineSlots() {
+        const expectedCount = this.spunDigits.length;
+        const currentCount = this.mySlots.filter(v => v !== null).length;
+        if (currentCount < expectedCount && this.currentDigit !== null) {
+          const emptyIdx = this.mySlots.findIndex(v => v === null);
+          if (emptyIdx !== -1) {
+            this.mySlots[emptyIdx] = this.currentDigit;
+            const filledCount = this.mySlots.filter(v => v !== null).length;
+            if (this.playersMap[this.myPeerId]) {
+              this.playersMap[this.myPeerId].slots = [...this.mySlots];
+              this.playersMap[this.myPeerId].filledCount = filledCount;
+            }
+            this.broadcastToAll({
+              type: 'PLAYER_SLOT_UPDATE',
+              slots: this.mySlots,
+              filledCount
+            });
+          }
+        }
+      }
+
+      checkAllPlayersPlacedCurrentSpin() {
+        if (!this.isHost || this.isSpinning || this.roundFinished) return;
+        const targetFilled = this.spunDigits.length;
+        if (targetFilled === 0) return;
+        const ids = Object.keys(this.playersMap);
+        const allReady = ids.every(id => (this.playersMap[id].filledCount || 0) >= targetFilled);
+        if (allReady) {
+          setTimeout(() => {
+            if (!this.isSpinning && !this.roundFinished) {
+              if (this.spunDigits.length >= this.tpl().slots) {
+                this.completeRound();
+              } else {
+                this.hostTriggerSpin();
+              }
+            }
+          }, 650);
+        }
+      }
+
+      simulateAIDigitPlacement(digit) {
+        ['AI_1', 'AI_2', 'AI_3'].forEach(aiId => {
+          const ai = this.playersMap[aiId];
+          if (!ai) return;
+          const delay = 600 + Math.random() * 1400;
+          setTimeout(() => {
+            if (this.roundFinished) return;
+            const emptyIndices = ai.slots.map((v, i) => v === null ? i : -1).filter(i => i !== -1);
+            if (emptyIndices.length === 0) return;
+
+            // Avoid placing 0 in denominator slots if template has fractions
+            const nonZeroSafe = emptyIndices.filter(idx => !(this.tpl().isFraction && digit === 0 && (idx === 1 || idx === 3 || idx === 2 || idx === 4)));
+            const pool = nonZeroSafe.length > 0 ? nonZeroSafe : emptyIndices;
+
+            let chosen = pool[Math.floor(Math.random() * pool.length)];
+            if (aiId === 'AI_1') {
+              if ((this.goal() === 'MAX' && digit >= 6) || (this.goal() === 'MIN' && digit <= 3)) {
+                chosen = pool[0];
+              } else {
+                chosen = pool[pool.length - 1];
+              }
+            }
+            ai.slots[chosen] = digit;
+            ai.filledCount = ai.slots.filter(v => v !== null).length;
+            this.renderOnlineOpponentMatrix();
+            this.checkAllPlayersPlacedCurrentSpin();
+          }, delay);
+        });
+      }
+
+      finalizeAISlots() {
+        ['AI_1', 'AI_2', 'AI_3'].forEach(aiId => {
+          const ai = this.playersMap[aiId];
+          if (!ai) return;
+          const emptyIdx = ai.slots.findIndex(v => v === null);
+          if (emptyIdx !== -1 && this.currentDigit !== null) {
+            ai.slots[emptyIdx] = this.currentDigit;
+            ai.filledCount = ai.slots.filter(v => v !== null).length;
+          }
+        });
+      }
+
+      renderOnlineSlotButton(slotIdx, isFractionPart = false) {
+        const val = this.mySlots[slotIdx];
+        const locked = this.myLockedMask[slotIdx] || this.roundFinished;
+        const sizeCls = isFractionPart ? 'w-12 h-12 sm:w-14 sm:h-14 text-2xl' : 'w-14 h-16 sm:w-16 sm:h-20 text-3xl sm:text-4xl';
+
+        if (val !== null) {
+          return `
+            <button type="button" onclick="app.handleOnlineSlotClick(${slotIdx})" ${locked ? 'disabled' : ''}
+              class="digit-slot ${sizeCls} rounded-2xl font-mono font-black flex items-center justify-center border-2 shadow-lg ${
+                locked
+                  ? 'bg-emerald-600/25 border-emerald-500/60 text-emerald-200 cursor-default'
+                  : 'bg-amber-500/25 border-amber-400 text-amber-300 hover:scale-105'
+              }">
+              ${val}
+            </button>
+          `;
+        }
+
+        const canPlace = !this.isSpinning && !this.roundFinished && this.currentDigit !== null;
+        return `
+          <button type="button" onclick="app.handleOnlineSlotClick(${slotIdx})" ${canPlace ? '' : 'disabled'}
+            class="digit-slot ${sizeCls} rounded-2xl font-mono text-2xl font-black flex items-center justify-center border-2 border-dashed ${
+              canPlace
+                ? 'bg-slate-900 hover:bg-indigo-950/60 border-indigo-400/70 hover:border-indigo-300 text-slate-500 hover:text-indigo-200 hover:scale-105 cursor-pointer'
+                : 'bg-slate-900/50 border-slate-800 text-slate-700 cursor-not-allowed'
+            }">
+            ?
+          </button>
+        `;
+      }
+
+      renderOnlineExpressionBoard() {
+        const board = document.getElementById('onlineExpressionBoard');
+        const tokens = this.tpl().tokens;
+
+        board.innerHTML = tokens.map(tok => {
+          if (typeof tok === 'number') {
+            return this.renderOnlineSlotButton(tok, false);
+          }
+          if (tok && typeof tok === 'object' && tok.type === 'frac') {
+            return `
+              <div class="inline-flex flex-col items-center">
+                ${this.renderOnlineSlotButton(tok.num, true)}
+                <div class="w-16 sm:w-20 h-1 bg-amber-400 rounded-full my-1.5"></div>
+                ${this.renderOnlineSlotButton(tok.den, true)}
+              </div>
+            `;
+          }
+          return `<span class="text-3xl sm:text-4xl font-black text-amber-400 px-1">${esc(tok)}</span>`;
+        }).join('');
+
+        const badge = document.getElementById('onlineLiveResultBadge');
+        if (this.mySlots.every(v => v !== null)) {
+          const val = this.tpl().evalDigits(this.mySlots);
+          if (val === null) {
+            badge.textContent = 'Undefined (÷ 0)';
+            badge.className = 'text-xs font-mono font-extrabold bg-rose-500/20 text-rose-300 px-3 py-1 rounded-full border border-rose-500/40';
+          } else {
+            badge.textContent = `Value: ${this.tpl().formatValue(val, this.mySlots)}`;
+            badge.className = 'text-xs font-mono font-extrabold bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full border border-emerald-500/40';
+          }
+        } else {
+          const placed = this.mySlots.filter(v => v !== null).length;
+          badge.textContent = `${placed} / ${this.tpl().slots} Placed`;
+          badge.className = 'text-xs font-mono font-bold bg-slate-950 text-slate-300 px-3 py-1 rounded-full border border-slate-800';
+        }
+      }
+
+      renderOnlineHistoryStrip() {
+        const strip = document.getElementById('onlineHistoryStrip');
+        strip.innerHTML = this.spunDigits.map((d, idx) => `
+          <span class="px-2.5 py-1 rounded-lg font-mono text-xs font-black ${
+            idx === this.spunDigits.length - 1
+              ? 'bg-amber-400 text-slate-950'
+              : 'bg-slate-950 border border-slate-800 text-slate-300'
+          }">${d}</span>
+        `).join('');
+      }
+
+      renderOnlineOpponentMatrix() {
+        const container = document.getElementById('opponentsMatrixContainer');
+        if (!container) return;
+        const maxSlots = this.tpl().slots;
+
+        container.innerHTML = Object.keys(this.playersMap).map(id => {
+          const p = this.playersMap[id];
+          const isSelf = id === this.myPeerId;
+          const slots = p.slots || Array(maxSlots).fill(null);
+
+          const dots = slots.map(v => `
+            <span class="w-5 h-6 rounded flex items-center justify-center text-[10px] font-mono font-bold ${
+              v !== null
+                ? 'bg-emerald-500/30 border border-emerald-400 text-emerald-200'
+                : 'bg-slate-900 border border-slate-800 text-slate-600'
+            }">${v !== null ? (this.roundFinished || isSelf ? v : '✓') : '·'}</span>
+          `).join('');
+
+          return `
+            <div class="bg-slate-950 border ${isSelf ? 'border-indigo-500/40' : 'border-slate-800'} rounded-xl p-3 flex items-center justify-between gap-2">
+              <div class="truncate">
+                <span class="text-xs font-bold text-white truncate block">${esc(p.name)} ${isSelf ? '<span class="text-[10px] text-indigo-300">(You)</span>' : ''}</span>
+                <span class="text-[11px] text-slate-400">${p.filledCount || 0} / ${maxSlots} placed</span>
+              </div>
+              <div class="flex items-center gap-1 shrink-0">${dots}</div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      showOnlineResultsModal() {
+        sound.playFanfare();
+        const opt = this.solveOptimal(this.spunDigits);
+        document.getElementById('resultsRoundTitle').textContent = `Round ${this.currentRoundIndex + 1} Results!`;
+        document.getElementById('resultsGoalSummary').textContent = `${this.tpl().name} • Goal: ${this.goalDescription()}`;
+
+        if (opt) {
+          document.getElementById('resultsOptimalBox').innerHTML = `
+            <span class="text-[11px] font-extrabold uppercase tracking-wider text-emerald-400 block">Optimal Possible Solution</span>
+            <div class="font-mono text-base sm:text-lg font-black text-white">${esc(opt.formatted)} = <span class="text-amber-400">${esc(opt.displayValue)}</span></div>
+          `;
+        }
+
+        const standings = Object.keys(this.playersMap).map(id => {
+          const p = this.playersMap[id];
+          const complete = p.slots && p.slots.every(v => v !== null);
+          const val = complete ? this.tpl().evalDigits(p.slots) : null;
+          const expr = complete ? this.tpl().formatFilled(p.slots) : 'Incomplete';
+          const displayVal = val !== null ? this.tpl().formatValue(val, p.slots) : 'Undefined';
+          const score = val !== null ? this.scoreDistance(val) : Infinity;
+          return { id, name: p.name, expr, val, displayVal, score };
+        }).sort((a, b) => a.score - b.score);
+
+        document.getElementById('resultsLeaderboardList').innerHTML = standings.map((s, idx) => `
+          <div class="flex items-center justify-between p-3 rounded-xl bg-slate-950 border ${idx === 0 ? 'border-amber-400/60' : 'border-slate-800'} gap-2">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="font-black text-sm ${idx === 0 ? 'text-amber-400' : 'text-slate-400'}">#${idx + 1}</span>
+                <span class="font-bold text-sm text-white truncate">${esc(s.name)}</span>
+              </div>
+              <span class="font-mono text-xs text-slate-400">${esc(s.expr)}</span>
+            </div>
+            <div class="text-right shrink-0">
+              <span class="font-mono text-sm sm:text-base font-black text-amber-300">${esc(s.displayVal)}</span>
+              ${this.goal() === 'TARGET' && s.val !== null ? `<span class="block text-[10px] text-slate-400">Off by ${this.formatPlainNum(Math.abs(s.val - this.targetNumber()))}</span>` : ''}
+            </div>
+          </div>
+        `).join('');
+
+        document.getElementById('resultsNextRoundBtn').classList.toggle('hidden', !this.isHost);
+        document.getElementById('resultsNextRoundBtn').textContent = `Start Round ${this.currentRoundIndex + 2}`;
+        document.getElementById('resultsModal').classList.remove('hidden');
+        if (typeof confetti === 'function') {
+          confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
+        }
+      }
+
+      closeResultsModal() {
+        document.getElementById('resultsModal').classList.add('hidden');
+      }
+
+      /* =========================================================
+         PRINT A4 QUARTER-CUT SHEETS (2 COLUMNS x 8 ROWS = 16 CELLS)
+         ========================================================= */
+      openPrintModal() {
+        document.getElementById('modalPrintSheets').classList.remove('hidden');
+      }
+
+      closePrintModal() {
+        document.getElementById('modalPrintSheets').classList.add('hidden');
+      }
+
+      renderPrintBoxesHTML(template) {
+        return template.tokens.map(tok => {
+          if (typeof tok === 'number') {
+            return '<span class="print-box"></span>';
+          }
+          if (tok && typeof tok === 'object' && tok.type === 'frac') {
+            return `
+              <span class="print-frac">
+                <span class="print-box"></span>
+                <span class="print-frac-bar"></span>
+                <span class="print-box"></span>
+              </span>
+            `;
+          }
+          return `<span>${esc(tok)}</span>`;
+        }).join('');
+      }
+
+      generateAndPrintSheets() {
+        const printMode = document.querySelector('input[name="printMode"]:checked').value;
+        const pageCount = parseInt(document.getElementById('selectPrintPages').value, 10) || 1;
+
+        // Build the 4 round configurations for each student quarter
+        const quarterRounds = [];
+        for (let r = 0; r < 4; r++) {
+          const sourceIdx = printMode === 'planned' ? r : 0;
+          const cfg = this.resolveRoundConfig(sourceIdx);
+          const tpl = TEMPLATES[cfg.templateId] || TEMPLATES.sub_3_2;
+          const goalLabel = cfg.goal === 'MAX'
+            ? 'Largest'
+            : cfg.goal === 'MIN'
+              ? 'Smallest'
+              : `Target: ${this.formatPlainNum(cfg.target)}`;
+          quarterRounds.push({
+            roundNum: r + 1,
+            tpl,
+            goalLabel
+          });
+        }
+
+        const printArea = document.getElementById('printArea');
+        printArea.innerHTML = '';
+
+        for (let p = 0; p < pageCount; p++) {
+          const pageDiv = document.createElement('div');
+          pageDiv.className = 'print-page';
+
+          // 8 rows x 2 columns = 16 cells
+          // Top 4 rows (row 0..3) = Top-Left & Top-Right quarters (Rounds 1..4)
+          // Bottom 4 rows (row 4..7) = Bottom-Left & Bottom-Right quarters (Rounds 1..4)
+          for (let row = 0; row < 8; row++) {
+            const roundObj = quarterRounds[row % 4];
+            const boxesHtml = this.renderPrintBoxesHTML(roundObj.tpl);
+
+            for (let col = 0; col < 2; col++) {
+              const cell = document.createElement('div');
+              const classes = ['print-cell'];
+              classes.push(col === 0 ? 'col-left' : 'col-right');
+              if (row === 3) classes.push('row-mid-top');
+              if (row === 4) classes.push('row-mid-bottom');
+              cell.className = classes.join(' ');
+
+              cell.innerHTML = `
+                <div class="print-cell-header">
+                  <span>Round ${roundObj.roundNum} — ${esc(roundObj.tpl.name)}</span>
+                  <span class="print-cell-goal">Aim: ${esc(roundObj.goalLabel)}</span>
+                </div>
+                <div class="print-expr-row">${boxesHtml}</div>
+                <div class="print-cell-footer">
+                  <span>Spun: ___ ___ ___ ___ ___${roundObj.tpl.slots === 6 ? ' ___' : ''}</span>
+                  <span>Result: ____________</span>
+                </div>
+              `;
+              pageDiv.appendChild(cell);
+            }
+          }
+
+          printArea.appendChild(pageDiv);
+        }
+
+        this.closePrintModal();
+        window.print();
+      }
+    }
+
+    const app = new DigitGridlockApp();
+    document.addEventListener('DOMContentLoaded', () => app.init());
+  </script>
+<script src="https://nugget-maths.co.nz/notice.js" defer></script>
+</body>
+</html>
