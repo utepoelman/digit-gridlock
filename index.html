@@ -412,7 +412,7 @@
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <div id="lobbyRulesBadge" class="px-3 py-2 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-200 text-xs font-bold"></div>
+            <div id="lobbyRulesBadge" class="px-4 py-2.5 rounded-xl bg-amber-500/15 border-2 border-amber-400/50 text-amber-200 text-sm font-black shadow"></div>
           </div>
         </div>
 
@@ -459,7 +459,7 @@
           </div>
           <div>
             <span id="classroomRoundSubLabel" class="text-xs font-bold text-amber-400 uppercase tracking-widest">Round 1 of 4 • Classroom Projector</span>
-            <h3 id="classroomGoalHeader" class="text-base font-extrabold text-white">Goal: Largest Possible Result</h3>
+            <h3 id="classroomGoalHeader" class="text-base font-extrabold text-white">3-Digit − 2-Digit</h3>
           </div>
         </div>
 
@@ -501,9 +501,6 @@
             <span id="classroomPhaseBadge" class="text-xs sm:text-sm font-extrabold text-indigo-300 uppercase tracking-widest bg-indigo-950/90 border border-indigo-500/30 px-4 py-1.5 rounded-full">
               ROUND 1 — PREPARE YOUR PAPER
             </span>
-            <span id="classroomGoalPill" class="text-xs sm:text-sm font-extrabold text-amber-300 bg-amber-950/70 border border-amber-500/30 px-4 py-1.5 rounded-full">
-              Aim: Largest Result
-            </span>
           </div>
 
           <div id="classroomTimerWrap" class="hidden flex items-center space-x-2 text-slate-300">
@@ -513,8 +510,11 @@
           </div>
         </div>
 
+        <!-- PROMINENT ROUND GOAL / TARGET BANNER (ALWAYS VISIBLE ON PROJECTOR STAGE) -->
+        <div id="classroomProminentGoalBanner"></div>
+
         <!-- PRE-GAME READY SCREEN (Students draw boxes on scrap paper/whiteboard) -->
-        <div id="classroomReadyPanel" class="py-6 sm:py-8 text-center space-y-6">
+        <div id="classroomReadyPanel" class="py-4 sm:py-6 text-center space-y-6">
           <div class="space-y-2">
             <h2 id="readyRoundHeading" class="text-2xl sm:text-4xl font-black text-white tracking-tight">Round 1: Draw This Template</h2>
             <p class="text-sm sm:text-lg text-slate-300 max-w-2xl mx-auto">
@@ -626,6 +626,9 @@
 
     <!-- 5. ON-SCREEN MULTIPLAYER & SOLO PRACTICE GAMEPLAY VIEW -->
     <section id="viewGameplay" class="hidden space-y-6">
+      <!-- PROMINENT ROUND GOAL / TARGET BANNER (ONLINE & SOLO) -->
+      <div id="onlineProminentGoalBanner"></div>
+
       <!-- Top Bar -->
       <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
         <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -638,7 +641,6 @@
               <div class="flex items-center flex-wrap gap-2">
                 <span id="onlineRoundBadge" class="text-xs font-extrabold px-2.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800">Round 1</span>
                 <span id="onlineSpinBadge" class="text-xs font-extrabold px-2.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">Spin #1</span>
-                <span id="onlineGoalBadge" class="text-xs font-extrabold px-2.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">Goal: Largest</span>
               </div>
               <h3 id="onlinePromptTitle" class="text-base sm:text-lg font-bold text-white mt-1">Tap an empty slot to place this digit!</h3>
               <p id="onlinePromptHint" class="text-xs text-slate-400">Once the next digit spins, placed digits lock permanently.</p>
@@ -739,6 +741,9 @@
           <i class="fa-solid fa-xmark text-xl"></i>
         </button>
       </div>
+
+      <!-- Active Round Goal / Target Banner -->
+      <div id="claimGoalBanner"></div>
 
       <!-- Spun Digits Pool Reference -->
       <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2">
@@ -861,7 +866,7 @@
           <i class="fa-solid fa-trophy"></i>
         </div>
         <h2 id="resultsRoundTitle" class="text-2xl sm:text-3xl font-black text-white">Round 1 Results!</h2>
-        <p id="resultsGoalSummary" class="text-xs sm:text-sm text-indigo-300 font-semibold"></p>
+        <div id="resultsGoalSummary" class="inline-block px-4 py-1.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-sm sm:text-base text-amber-200 font-black"></div>
       </div>
 
       <!-- Optimal Solution Box -->
@@ -969,6 +974,44 @@
      *   - `{ type: 'frac', num: i, den: j }`: stacked fraction numerator slot `i` over denominator slot `j`
      */
     const TEMPLATES = {
+      num_3: {
+        id: 'num_3',
+        name: 'Single 3-Digit Number',
+        category: 'Whole Numbers',
+        slots: 3,
+        tokens: [0, 1, 2],
+        defaultTarget: 500,
+        targetOptions: [150, 250, 350, 450, 500, 550, 650, 750, 850],
+        isFraction: false,
+        evalDigits(d) {
+          return 100 * d[0] + 10 * d[1] + d[2];
+        },
+        formatFilled(d) {
+          return `${d[0]}${d[1]}${d[2]}`;
+        },
+        formatValue(val) {
+          return Number(val).toLocaleString('en-US', { maximumFractionDigits: 4 });
+        }
+      },
+      num_4: {
+        id: 'num_4',
+        name: 'Single 4-Digit Number',
+        category: 'Whole Numbers',
+        slots: 4,
+        tokens: [0, 1, 2, 3],
+        defaultTarget: 5000,
+        targetOptions: [1500, 2500, 3500, 4500, 5000, 5500, 6500, 7500, 8500],
+        isFraction: false,
+        evalDigits(d) {
+          return 1000 * d[0] + 100 * d[1] + 10 * d[2] + d[3];
+        },
+        formatFilled(d) {
+          return `${d[0]}${d[1]}${d[2]}${d[3]}`;
+        },
+        formatValue(val) {
+          return Number(val).toLocaleString('en-US', { maximumFractionDigits: 4 });
+        }
+      },
       sub_3_2: {
         id: 'sub_3_2',
         name: '3-Digit − 2-Digit',
@@ -1581,6 +1624,61 @@
         return `Closest to ${this.formatPlainNum(this.targetNumber())}`;
       }
 
+      renderGoalBannerHTML(compact = false) {
+        const g = this.goal();
+        const titleSize = compact ? 'text-lg sm:text-2xl' : 'text-2xl sm:text-4xl';
+        const numSize = compact ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-5xl';
+        const padCls = compact ? 'px-4 py-3' : 'px-5 py-4 sm:px-6 sm:py-5';
+        const iconBox = compact ? 'w-10 h-10 text-lg' : 'w-12 h-12 sm:w-14 sm:h-14 text-2xl sm:text-3xl';
+
+        if (g === 'TARGET') {
+          const targetStr = esc(this.formatPlainNum(this.targetNumber()));
+          return `
+            <div class="w-full rounded-2xl bg-gradient-to-r from-amber-500/25 via-amber-500/15 to-orange-500/25 border-2 border-amber-400/80 ${padCls} flex items-center justify-between gap-4 shadow-lg shadow-amber-500/15">
+              <div class="flex items-center gap-3 sm:gap-4">
+                <div class="${iconBox} rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center font-black shrink-0 shadow-md">
+                  <i class="fa-solid fa-bullseye"></i>
+                </div>
+                <div>
+                  <span class="text-[11px] sm:text-xs font-black uppercase tracking-widest text-amber-300 block">Round Goal • Closest to Target</span>
+                  <span class="${titleSize} font-black text-white tracking-tight">Hit Target Number</span>
+                </div>
+              </div>
+              <div class="text-right bg-slate-950/85 border-2 border-amber-400/70 rounded-xl px-4 py-2 shrink-0 shadow-inner">
+                <span class="text-[10px] font-extrabold uppercase tracking-widest text-amber-300 block">Target</span>
+                <span class="${numSize} font-mono font-black text-amber-400 leading-none">${targetStr}</span>
+              </div>
+            </div>
+          `;
+        }
+
+        if (g === 'MIN') {
+          return `
+            <div class="w-full rounded-2xl bg-gradient-to-r from-sky-500/20 via-indigo-500/15 to-sky-500/20 border-2 border-sky-400/70 ${padCls} flex items-center gap-3 sm:gap-4 shadow-lg shadow-sky-500/10">
+              <div class="${iconBox} rounded-xl bg-sky-400 text-slate-950 flex items-center justify-center font-black shrink-0 shadow-md">
+                <i class="fa-solid fa-arrow-trend-down"></i>
+              </div>
+              <div>
+                <span class="text-[11px] sm:text-xs font-black uppercase tracking-widest text-sky-300 block">Round Goal</span>
+                <span class="${titleSize} font-black text-white tracking-tight">Smallest Possible Result</span>
+              </div>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="w-full rounded-2xl bg-gradient-to-r from-emerald-500/20 via-teal-500/15 to-emerald-500/20 border-2 border-emerald-400/70 ${padCls} flex items-center gap-3 sm:gap-4 shadow-lg shadow-emerald-500/10">
+            <div class="${iconBox} rounded-xl bg-emerald-400 text-slate-950 flex items-center justify-center font-black shrink-0 shadow-md">
+              <i class="fa-solid fa-arrow-trend-up"></i>
+            </div>
+            <div>
+              <span class="text-[11px] sm:text-xs font-black uppercase tracking-widest text-emerald-300 block">Round Goal</span>
+              <span class="${titleSize} font-black text-white tracking-tight">Largest Possible Result</span>
+            </div>
+          </div>
+        `;
+      }
+
       formatPlainNum(n) {
         if (n === null || n === undefined || Number.isNaN(n)) return '—';
         const rounded = Math.round(n * 10000) / 10000;
@@ -1908,11 +2006,10 @@
       updateClassroomHeader() {
         const roundNum = this.currentRoundIndex + 1;
         const planTag = roundNum <= this.plannedRoundCount ? `Round ${roundNum} of ${this.plannedRoundCount}` : `Bonus Round ${roundNum}`;
-        const goalText = this.goalDescription();
 
         document.getElementById('classroomRoundSubLabel').textContent = `${planTag} • Classroom Projector`;
-        document.getElementById('classroomGoalHeader').textContent = `${this.tpl().name} • Goal: ${goalText}`;
-        document.getElementById('classroomGoalPill').textContent = `Aim: ${goalText}`;
+        document.getElementById('classroomGoalHeader').textContent = this.tpl().name;
+        document.getElementById('classroomProminentGoalBanner').innerHTML = this.renderGoalBannerHTML(false);
         document.getElementById('readyRoundHeading').textContent = `Round ${roundNum}: Draw This Template`;
         document.getElementById('readySlotCount').textContent = this.tpl().slots;
         document.getElementById('classroomTemplateDiagram').innerHTML = this.renderStaticTemplateHTML('lg');
@@ -2161,6 +2258,8 @@
       openCheckClaimModal() {
         this.wasPausedBeforeCheck = this.isPaused;
         this.isPaused = true;
+
+        document.getElementById('claimGoalBanner').innerHTML = this.renderGoalBannerHTML(true);
 
         const poolEl = document.getElementById('claimSpunReference');
         if (this.spunDigits.length === 0) {
@@ -2714,9 +2813,9 @@
 
         this.hideAllViews();
         document.getElementById('viewGameplay').classList.remove('hidden');
+        document.getElementById('onlineProminentGoalBanner').innerHTML = this.renderGoalBannerHTML(true);
         document.getElementById('onlineWheelMount').innerHTML = this.buildWheelSVG('onlineWheelGroup');
-        document.getElementById('onlineRoundBadge').textContent = `Round ${this.currentRoundIndex + 1}`;
-        document.getElementById('onlineGoalBadge').textContent = `Goal: ${this.goalDescription()}`;
+        document.getElementById('onlineRoundBadge').textContent = `Round ${this.currentRoundIndex + 1} • ${this.tpl().name}`;
 
         const showHostControls = this.isHost || this.mode === 'OFFLINE';
         document.getElementById('hostForceSpinBtn').classList.toggle('hidden', !showHostControls);
@@ -3103,6 +3202,7 @@
           for (let row = 0; row < 8; row++) {
             const roundObj = quarterRounds[row % 4];
             const boxesHtml = this.renderPrintBoxesHTML(roundObj.tpl);
+            const spunBlanks = Array(roundObj.tpl.slots).fill('___').join(' ');
 
             for (let col = 0; col < 2; col++) {
               const cell = document.createElement('div');
@@ -3119,7 +3219,7 @@
                 </div>
                 <div class="print-expr-row">${boxesHtml}</div>
                 <div class="print-cell-footer">
-                  <span>Spun: ___ ___ ___ ___ ___${roundObj.tpl.slots === 6 ? ' ___' : ''}</span>
+                  <span>Spun: ${spunBlanks}</span>
                   <span>Result: ____________</span>
                 </div>
               `;
