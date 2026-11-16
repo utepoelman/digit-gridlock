@@ -1416,6 +1416,10 @@
         this.mySlots = [];
         this.myLockedMask = [];
         this.playersMap = {};
+
+        // Late-join support
+        this.spectating = false;   // true if this player joined mid-round and sits out until the next round
+        this.pendingDigit = null;  // digit currently being spun (host uses this to sync late joiners)
       }
 
       init() {
@@ -1908,6 +1912,8 @@
         this.gameStarted = false;
         this.classroomAwaitingStart = false;
         this.joinConfirmed = false;
+        this.spectating = false;
+        this.pendingDigit = null;
         this.isPaused = false;
         this.isSpinning = false;
         this.roundFinished = false;
@@ -2609,14 +2615,31 @@
 
         switch (msg.type) {
           case 'PLAYER_JOIN_REQ':
-            if (this.isHost) {
-              this.playersMap[msg.senderId] = {
-                name: String(msg.playerName || 'Player').slice(0, 14),
-                slots: Array(this.tpl().slots).fill(null),
-                filledCount: 0
-              };
+            if (this.isHost && this.mode === 'HOST') {
+              const isNew = !this.playersMap[msg.senderId];
+              if (isNew) {
+                this.playersMap[msg.senderId] = {
+                  name: String(msg.playerName || 'Player').slice(0, 14),
+                  slots: Array(this.tpl().slots).fill(null),
+                  filledCount: 0
+                };
+                // Late join: a player who arrives after the 1st digit has been revealed
+                // can't play this round fairly, so they watch until the next round starts.
+                if (this.gameStarted && !this.roundFinished) {
+                  const revealed = this.spunDigits.length + (this.isSpinning ? 1 : 0);
+                  if (revealed > 1) this.playersMap[msg.senderId].spectating = true;
+                }
+              }
               this.updateLobbyPlayerList();
+              if (this.gameStarted) this.renderOnlineOpponentMatrix();
               this.broadcastState();
+              if (this.gameStarted) this.sendLateJoinSync(msg.senderId);
+            }
+            break;
+
+          case 'LATE_JOIN_SYNC':
+            if (!this.isHost && msg.targetId === this.myPeerId && !this.gameStarted) {
+              this.handleLateJoinSync(msg);
             }
             break;
 
@@ -2633,10 +2656,13 @@
               this.currentRoundIndex = msg.currentRoundIndex || 0;
               this.activeRoundConfig = msg.activeRoundConfig;
               this.timerDuration = msg.timerDuration;
+              const mine = this.playersMap[this.myPeerId];
               this.playersMap = msg.playersMap;
+              if (this.gameStarted && mine) this.playersMap[this.myPeerId] = mine;
               if (typeof msg.soundEnabled === 'boolean') this.setSoundEnabled(msg.soundEnabled, false);
-              document.getElementById('lobbyRulesBadge').textContent = `Round 1: ${this.tpl().name} • ${this.goalDescription()}`;
+              document.getElementById('lobbyRulesBadge').textContent = `Round ${this.currentRoundIndex + 1}: ${this.tpl().name} • ${this.goalDescription()}`;
               this.updateLobbyPlayerList();
+              if (this.gameStarted) this.renderOnlineOpponentMatrix();
             }
             break;
 
@@ -2711,6 +2737,81 @@
           playersMap: this.playersMap,
           soundEnabled: this.soundEnabled
         });
+      }
+
+      sendLateJoinSync(targetId) {
+        if (!this.isHost || this.mode !== 'HOST') return;
+        const entry = this.playersMap[targetId] || {};
+        this.broadcastToAll({
+          type: 'LATE_JOIN_SYNC',
+          targetId,
+          currentRoundIndex: this.currentRoundIndex,
+          activeRoundConfig: this.activeRoundConfig,
+          timerDuration: this.timerDuration,
+          timerRemaining: this.timerRemaining,
+          soundEnabled: this.soundEnabled,
+          spunDigits: [...this.spunDigits],
+          pendingDigit: this.isSpinning ? this.pendingDigit : null,
+          roundFinished: this.roundFinished,
+          spectating: !!entry.spectating,
+          playersMap: this.playersMap
+        });
+      }
+
+      handleLateJoinSync(msg) {
+        this.joinConfirmed = true;
+        clearTimeout(this.joinTimeout);
+        this.currentRoundIndex = msg.currentRoundIndex || 0;
+        this.activeRoundConfig = msg.activeRoundConfig;
+        this.timerDuration = msg.timerDuration;
+        const mine = this.playersMap[this.myPeerId];
+        this.playersMap = msg.playersMap || this.playersMap;
+        if (mine && !this.playersMap[this.myPeerId]) this.playersMap[this.myPeerId] = mine;
+        if (typeof msg.soundEnabled === 'boolean') this.setSoundEnabled(msg.soundEnabled, false);
+
+        // Host is between rounds (results showing): wait in the lobby for the next round.
+        if (msg.roundFinished) {
+          const notice = document.getElementById('playerWaitingNotice');
+          notice.className = 'bg-purple-950/40 border border-purple-500/30 rounded-xl p-4 text-center text-purple-200 text-sm font-bold';
+          notice.innerHTML = `<i class="fa-solid fa-check-circle text-emerald-400 mr-1.5"></i>Connected! Round ${this.currentRoundIndex + 1} just finished — you'll join automatically when Round ${this.currentRoundIndex + 2} starts.`;
+          document.getElementById('lobbyRulesBadge').textContent = `Round ${this.currentRoundIndex + 1}: ${this.tpl().name} • ${this.goalDescription()}`;
+          this.updateLobbyPlayerList();
+          this.updateStatus('Connected to Host', 'bg-emerald-500');
+          return;
+        }
+
+        // Game is mid-round: jump straight into the live round.
+        this.setupOnlineGameplayUI(true);
+        this.spectating = !!msg.spectating;
+        if (this.playersMap[this.myPeerId]) this.playersMap[this.myPeerId].spectating = this.spectating;
+        this.spunDigits = [...(msg.spunDigits || [])];
+        this.renderOnlineHistoryStrip();
+        this.renderOnlineOpponentMatrix();
+        this.updateStatus('Joined round in progress', 'bg-emerald-500');
+
+        const maxSlots = this.tpl().slots;
+        if (msg.pendingDigit !== null && msg.pendingDigit !== undefined) {
+          // Host is mid-spin: animate the same digit; the callback starts the timer.
+          this.executeOnlineSpinAnimation(msg.pendingDigit);
+        } else if (this.spunDigits.length > 0) {
+          const digit = this.spunDigits[this.spunDigits.length - 1];
+          this.currentDigit = digit;
+          document.getElementById('onlineSpunDigit').textContent = digit;
+          document.getElementById('onlineSpinBadge').textContent = `Spin #${this.spunDigits.length} of ${maxSlots}`;
+          this.updateOnlinePromptTitle(digit);
+          this.renderOnlineExpressionBoard();
+          this.startSpinTimer();
+          if (this.timerDuration > 0 && typeof msg.timerRemaining === 'number') {
+            this.timerRemaining = Math.max(0, Math.min(this.timerDuration, msg.timerRemaining));
+            this.updateTimerUI(this.timerRemaining, false);
+          }
+        }
+      }
+
+      updateOnlinePromptTitle(digit) {
+        document.getElementById('onlinePromptTitle').textContent = this.spectating
+          ? `You joined mid-round — watch this one, you'll play from Round ${this.currentRoundIndex + 2}!`
+          : `Tap an open box to place ${digit}!`;
       }
 
       updateLobbyPlayerList() {
@@ -2797,8 +2898,9 @@
         this.executeOnlineSpinAnimation(firstDigit);
       }
 
-      setupOnlineGameplayUI() {
+      setupOnlineGameplayUI(keepPlayerProgress = false) {
         this.gameStarted = true;
+        if (!keepPlayerProgress) this.spectating = false;
         this.roundFinished = false;
         this.spunDigits = [];
         this.currentDigit = null;
@@ -2806,10 +2908,13 @@
         this.mySlots = Array(k).fill(null);
         this.myLockedMask = Array(k).fill(false);
 
-        Object.keys(this.playersMap).forEach(id => {
-          this.playersMap[id].slots = Array(k).fill(null);
-          this.playersMap[id].filledCount = 0;
-        });
+        if (!keepPlayerProgress) {
+          Object.keys(this.playersMap).forEach(id => {
+            this.playersMap[id].slots = Array(k).fill(null);
+            this.playersMap[id].filledCount = 0;
+            delete this.playersMap[id].spectating; // late joiners become full players next round
+          });
+        }
 
         this.hideAllViews();
         document.getElementById('viewGameplay').classList.remove('hidden');
@@ -2829,6 +2934,7 @@
       executeOnlineSpinAnimation(digit) {
         if (this.timerInterval) clearInterval(this.timerInterval);
         this.isSpinning = true;
+        this.pendingDigit = digit;
         const maxSlots = this.tpl().slots;
         const spinNum = this.spunDigits.length + 1;
 
@@ -2839,11 +2945,12 @@
 
         this.animateWheelToDigit('onlineWheelGroup', digit, () => {
           this.isSpinning = false;
+          this.pendingDigit = null;
           this.currentDigit = digit;
           this.spunDigits.push(digit);
 
           document.getElementById('onlineSpunDigit').textContent = digit;
-          document.getElementById('onlinePromptTitle').textContent = `Tap an open box to place ${digit}!`;
+          this.updateOnlinePromptTitle(digit);
           this.renderOnlineExpressionBoard();
           this.renderOnlineHistoryStrip();
 
@@ -2855,7 +2962,7 @@
       }
 
       handleOnlineSlotClick(slotIdx) {
-        if (this.isSpinning || this.roundFinished || this.currentDigit === null) return;
+        if (this.spectating || this.isSpinning || this.roundFinished || this.currentDigit === null) return;
         if (this.myLockedMask[slotIdx]) return;
 
         for (let i = 0; i < this.mySlots.length; i++) {
@@ -2887,7 +2994,7 @@
       }
 
       lockPreviousOnlineSlot() {
-        if (this.spunDigits.length === 0) return;
+        if (this.spectating || this.spunDigits.length === 0) return;
         this.autoFillMissingOnlineSlots();
         for (let i = 0; i < this.mySlots.length; i++) {
           if (this.mySlots[i] !== null) {
@@ -2897,6 +3004,7 @@
       }
 
       autoFillMissingOnlineSlots() {
+        if (this.spectating) return;
         const expectedCount = this.spunDigits.length;
         const currentCount = this.mySlots.filter(v => v !== null).length;
         if (currentCount < expectedCount && this.currentDigit !== null) {
@@ -2921,7 +3029,7 @@
         if (!this.isHost || this.isSpinning || this.roundFinished) return;
         const targetFilled = this.spunDigits.length;
         if (targetFilled === 0) return;
-        const ids = Object.keys(this.playersMap);
+        const ids = Object.keys(this.playersMap).filter(id => !this.playersMap[id].spectating);
         const allReady = ids.every(id => (this.playersMap[id].filledCount || 0) >= targetFilled);
         if (allReady) {
           setTimeout(() => {
@@ -2996,7 +3104,7 @@
           `;
         }
 
-        const canPlace = !this.isSpinning && !this.roundFinished && this.currentDigit !== null;
+        const canPlace = !this.spectating && !this.isSpinning && !this.roundFinished && this.currentDigit !== null;
         return `
           <button type="button" onclick="app.handleOnlineSlotClick(${slotIdx})" ${canPlace ? '' : 'disabled'}
             class="digit-slot ${sizeCls} rounded-2xl font-mono text-2xl font-black flex items-center justify-center border-2 border-dashed ${
@@ -3079,7 +3187,7 @@
             <div class="bg-slate-950 border ${isSelf ? 'border-indigo-500/40' : 'border-slate-800'} rounded-xl p-3 flex items-center justify-between gap-2">
               <div class="truncate">
                 <span class="text-xs font-bold text-white truncate block">${esc(p.name)} ${isSelf ? '<span class="text-[10px] text-indigo-300">(You)</span>' : ''}</span>
-                <span class="text-[11px] text-slate-400">${p.filledCount || 0} / ${maxSlots} placed</span>
+                <span class="text-[11px] ${p.spectating ? 'text-purple-300' : 'text-slate-400'}">${p.spectating ? 'Joined late • plays next round' : `${p.filledCount || 0} / ${maxSlots} placed`}</span>
               </div>
               <div class="flex items-center gap-1 shrink-0">${dots}</div>
             </div>
@@ -3104,8 +3212,8 @@
           const p = this.playersMap[id];
           const complete = p.slots && p.slots.every(v => v !== null);
           const val = complete ? this.tpl().evalDigits(p.slots) : null;
-          const expr = complete ? this.tpl().formatFilled(p.slots) : 'Incomplete';
-          const displayVal = val !== null ? this.tpl().formatValue(val, p.slots) : 'Undefined';
+          const expr = complete ? this.tpl().formatFilled(p.slots) : (p.spectating ? 'Joined late — plays next round' : 'Incomplete');
+          const displayVal = val !== null ? this.tpl().formatValue(val, p.slots) : (!complete && p.spectating ? '—' : 'Undefined');
           const score = val !== null ? this.scoreDistance(val) : Infinity;
           return { id, name: p.name, expr, val, displayVal, score };
         }).sort((a, b) => a.score - b.score);
