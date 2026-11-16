@@ -206,6 +206,12 @@
           <span class="hidden sm:inline">Print Sheets</span>
         </button>
 
+        <!-- Full Screen -->
+        <button onclick="app.toggleFullscreen()" title="Toggle full screen (F)" class="fs-btn px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center space-x-2 transition border border-slate-700">
+          <i class="fs-icon fa-solid fa-expand"></i>
+          <span class="fs-label hidden sm:inline">Full screen</span>
+        </button>
+
         <!-- Sound Toggle -->
         <button id="muteBtn" onclick="app.toggleSound()" title="Toggle sound effects" class="hidden px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center space-x-2 transition border border-slate-700">
           <i id="muteIcon" class="fa-solid fa-volume-xmark text-slate-500"></i>
@@ -478,6 +484,11 @@
           <!-- Next Round Button -->
           <button onclick="app.advanceClassroomNextRound()" title="Advance to the next planned round" class="px-3.5 py-2.5 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 font-bold text-xs transition border border-indigo-500/40">
             <i class="fa-solid fa-forward-step mr-1"></i> Next Round
+          </button>
+
+          <!-- Full Screen -->
+          <button onclick="app.toggleFullscreen()" title="Toggle full screen (F)" class="fs-btn px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition border border-slate-700">
+            <i class="fs-icon fa-solid fa-expand"></i>
           </button>
 
           <!-- Pause / Resume -->
@@ -1438,6 +1449,17 @@
           if (e.key === 'Enter') this.verifyStudentClaim();
         });
 
+        document.addEventListener('fullscreenchange', () => this.updateFullscreenUI());
+        document.addEventListener('webkitfullscreenchange', () => this.updateFullscreenUI());
+        document.addEventListener('keydown', e => {
+          if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            const t = e.target;
+            const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+            if (!typing) this.toggleFullscreen();
+          }
+        });
+        this.updateFullscreenUI();
+
         this.renderRoundPlanner();
         this.showLanding();
       }
@@ -1893,6 +1915,47 @@
         document.getElementById('muteText').textContent = this.soundEnabled ? 'Sound on' : 'Sound off';
         const cb = document.getElementById('inputSoundEnabled');
         if (cb) cb.checked = this.soundEnabled;
+      }
+
+      /* ---------- Full screen ---------- */
+      fullscreenSupported() {
+        const el = document.documentElement;
+        return !!(el.requestFullscreen || el.webkitRequestFullscreen);
+      }
+
+      isFullscreen() {
+        return !!(document.fullscreenElement || document.webkitFullscreenElement);
+      }
+
+      toggleFullscreen() {
+        if (!this.fullscreenSupported()) return;
+        try {
+          if (this.isFullscreen()) {
+            const exit = document.exitFullscreen || document.webkitExitFullscreen;
+            const r = exit.call(document);
+            if (r && r.catch) r.catch(() => {});
+          } else {
+            const el = document.documentElement;
+            const req = el.requestFullscreen || el.webkitRequestFullscreen;
+            const r = req.call(el);
+            if (r && r.catch) r.catch(() => {});
+          }
+        } catch (e) {}
+      }
+
+      updateFullscreenUI() {
+        const supported = this.fullscreenSupported();
+        const on = this.isFullscreen();
+        document.querySelectorAll('.fs-btn').forEach(btn => {
+          btn.classList.toggle('hidden', !supported);
+          btn.title = on ? 'Exit full screen (F)' : 'Toggle full screen (F)';
+        });
+        document.querySelectorAll('.fs-icon').forEach(i => {
+          i.className = `fs-icon fa-solid ${on ? 'fa-compress' : 'fa-expand'}`;
+        });
+        document.querySelectorAll('.fs-label').forEach(l => {
+          l.textContent = on ? 'Exit full screen' : 'Full screen';
+        });
       }
 
       hideAllViews() {
